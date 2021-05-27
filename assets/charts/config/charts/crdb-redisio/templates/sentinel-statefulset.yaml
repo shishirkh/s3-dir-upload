@@ -1,0 +1,211 @@
+---
+{{- if .Values.sentinel.enabled }}
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ template "config-crdb-redisio.fullname" . }}-sentinel
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+    vnfType: "{{.Values.global.vnftype }}"
+    vnfName: "{{ .Values.global.vnfname }}"
+    vnfcType: "{{ .Values.global.vnfctype }}"
+    vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+    vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+    release: "{{ .Release.Name }}"
+spec:
+  serviceName: {{ template "config-crdb-redisio.fullname" . }}-sentinel-nodes
+  podManagementPolicy: "Parallel"
+  replicas: {{ .Values.sentinel.count }}
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "config-crdb-redisio.common_labels" . | indent 6 }}
+      type: sentinel
+  template:
+    metadata:
+      labels:
+        {{- include "config-crdb-redisio.common_labels" . | indent 8 }}
+        type: sentinel
+        vnfType: "{{ .Values.global.vnftype }}"
+        vnfName: "{{ .Values.global.vnfname }}"
+        vnfcType: "{{ .Values.global.vnfctype }}"
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: "{{ .Values.global.vnfctype }}"
+        release: "{{ .Release.Name }}"
+      annotations:
+        config/checksum: {{ .Values.sentinel.confInclude | sha256sum }}
+    spec:
+      securityContext:
+        runAsUser: 6379
+        runAsGroup: 6379
+        fsGroup: 6379
+      {{- if .Values.rbacEnabled }}
+      serviceAccountName: {{ template "config-crdb-redisio.fullname" . }}
+      {{- end }}
+      initContainers:
+      - name: config
+        {{- include "config-crdb-redisio.sentinel.image" . | indent 8 }}
+        securityContext:
+          runAsUser: 6379
+        command: [ "/usr/bin/harmonize_log", "--service=redisio-init", "/docker-entrypoint.sh"  ]
+        args: [ "init", "sentinel" ]
+        env:
+        - name: DEBUG
+          value: {{ quote (.Values.sentinel.debug | default "") }}
+        - name: GROUP_NAME
+          value: configmaster
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "config-crdb-redisio.fullname" . }}-redis-secrets
+              key: redis-password
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /cluster
+        - name: import-cm
+          mountPath: /import
+          readOnly: true
+        - name: datadir
+          mountPath: /redisdb
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      containers:
+      - name: sentinel
+        {{- include "config-crdb-redisio.sentinel.image" . | indent 8 }}
+        securityContext:
+          runAsUser: 6379
+        ports:
+        - containerPort: 26379
+          name: sentinel
+        command: [ "/usr/bin/harmonize_log", "--service=redisio-init", "/docker-entrypoint.sh"  ]
+        args: [ "sentinel" ]
+        env:
+        - name: DEBUG
+          value: {{ quote (.Values.sentinel.debug | default "") }}
+        - name: GROUP_NAME
+          value: configmaster
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _CRDB_REDISIO_SENTINEL_BIND
+          value: "$(POD_IP) 127.0.0.1"
+        - name: _CRDB_REDISIO_SENTINEL_PORT
+          value: "26379"
+        #- name: _CRDB_REDISIO_SENTINEL_SENTINEL_ANNOUNCE_IP
+          #value: $(POD_IP)
+        #- name: _CRDB_REDISIO_SENTINEL_SENTINEL_ANNOUNCE_PORT
+          #value: "26379"
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /cluster
+        - name: datadir
+          mountPath: /redisdb
+#        livenessProbe:
+#          exec:
+#            command:
+#            - bash
+#            - "-c"
+#            - |
+#              /usr/bin/redis-cli -h ${POD_IP} -p 26379 ping && /usr/bin/redis-cli -p 26379 ping
+#          initialDelaySeconds: 180
+#          periodSeconds: 10
+#          timeoutSeconds: 5
+#          failureThreshold: 6
+#        readinessProbe:
+#          exec:
+#            command:
+#            - bash
+#            - "-c"
+#            - |
+#              /usr/bin/redis-cli -h ${POD_IP} -p 26379 ping && /usr/bin/redis-cli -p 26379 ping
+#          initialDelaySeconds: 10
+#          periodSeconds: 20
+#          timeoutSeconds: 2
+#          failureThreshold: 3
+        resources:
+{{ toYaml .Values.sentinel.resources | indent 10 }}
+
+      # Redis Sentinel metrics exporter container
+      {{- if and (.Values.sentinel.metrics) .Values.sentinel.metrics.enabled }}
+      - name: metrics
+        {{- include "config-crdb-redisio.sentinel.metrics.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.sentinel.metrics.resources | indent 10 }}
+        securityContext:
+          runAsUser: 6379
+        env:
+        - name: REDIS_ADDR
+          value: redis://127.0.0.1:26379
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "config-crdb-redisio.fullname" . }}-redis-secrets
+              key: redis-password
+        ports:
+        - name: metrics
+          containerPort: 9121
+      {{- end }}
+
+      volumes:
+      - name: import-cm
+        configMap:
+          name: {{ template "config-crdb-redisio.fullname" . }}-sentinel-config
+      - name: cluster-cm
+        configMap:
+          name: {{ template "config-crdb-redisio.fullname" . }}-cluster-config
+      - name: datadir
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+        {{- if eq (default "hard" .Values.nodeAntiAffinity) "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - {{ template "config-crdb-redisio.fullname" . }}
+              - key: type
+                operator: In
+                values:
+                - sentinel
+            topologyKey: "kubernetes.io/hostname"
+          preferredDuringSchedulingIgnoredDuringExecution:
+        {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ template "config-crdb-redisio.fullname" . }}
+                - key: type
+                  operator: In
+                  values:
+                  - sentinel
+              topologyKey: "kubernetes.io/hostname"
+        {{- end }}
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ template "config-crdb-redisio.fullname" . }}
+                - key: type
+                  operator: In
+                  values:
+                  - sentinel
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+{{- end }}

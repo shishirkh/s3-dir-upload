@@ -1,0 +1,51 @@
+{{- if gt (int .Values.global.prerestore) 0 }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Release.Name }}-pre-restore"
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "cm-crdb-redisio.common_labels" . | indent 8 }}
+        type: admin-ncms-hook
+        ncms-hook: prerestore
+    spec:
+      securityContext:
+        runAsUser: 6379
+        runAsGroup: 6379
+        fsGroup: 6379
+      {{- if .Values.rbacEnabled }}
+      serviceAccountName: {{ template "cm-crdb-redisio.fullname" . }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: pre-restore-admin
+        {{- include "cm-crdb-redisio.admin.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+        args: [ "restore" ]
+        env:
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ template "cm-crdb-redisio.fullname" . }}
+        - name: K8S_PREFIX
+          value: {{ template "cm-crdb-redisio.fullname" . }}
+        - name: HOOK_TYPE
+          value: "pre"
+        - name: RBAC_ENABLED
+          value: {{ .Values.rbacEnabled | quote }}
+        - name: DEBUG
+          value: {{ quote ( .Values.admin.debug | default "" ) }}
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /cluster
+      volumes:
+      - name: cluster-cm
+        configMap:
+          name: {{ template "cm-crdb-redisio.fullname" . }}-cluster-config
+{{- end }}

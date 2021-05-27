@@ -1,0 +1,11 @@
+apiVersion: v1
+appVersion: "1.0"
+description: A Helm chart for Kubernetes to deploy cmserver
+keywords:
+- datasync
+- "20.0"
+- datasync
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Disaster Recovery and Data Repo Services", "SVC_NAME":
+  "Data Sync Service", "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+name: datasync
+version: 1.5.8

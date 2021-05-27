@@ -1,0 +1,14 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy EventProcessingService in kubernets cluster
+engine: gotpl
+keywords:
+- EPS
+- "20.0"
+- EPS
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Main O&M Services", "SVC_NAME": "Event Processing
+  Service", "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+maintainers:
+- name: Nokia
+name: EventProcessingService
+version: 1.5.37

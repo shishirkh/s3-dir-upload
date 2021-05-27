@@ -1,0 +1,324 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmapdyn.namelb1 }}
+  labels:
+    app: {{ .Values.configmapdyn.labels.app }}
+    chart: {{ template "ztslenvoylb.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/var/DebugTrace/envoylb/envoylb.log"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8002
+          protocol: TCP
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "integration-netact"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: integrationservicenetactlb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8086
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              alpn_protocols: h2,http/1.1
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: integrationservicenetactlb
+              route_config:
+                name: integrationservicenetactlb
+                virtual_hosts:
+                - name: integrationservicenetactlb
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: integrationservicenetact
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: integrationservicenetactlb
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-integrationservicenetactlb
+              idle_timeout:
+                 seconds: 1800
+              drain_timeout:
+                 seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbnetact.log"
+              generate_request_id: true
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "sftpserver-logagent"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: sftpserverlogagentlb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8091
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: sftpserverlogagentlb
+              cluster: sftpserverlogagent-{{"{{"}}.ID{{"}}"}}
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbsftplogagent.log"
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "splunkserver-logagent"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: splunkserverlogagentlb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8092
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: splunkserverlogagentlb
+              cluster: splunkserverlogagent-{{"{{"}}.ID{{"}}"}}
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbsplunklogagent.log"
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-cmserver-netconf"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: tcp.proxy-{{"{{"}}.ID{{"}}"}}
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: confd
+              cluster: cmconf-server-{{"{{"}}.ID{{"}}"}}
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbConfServer.log"
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-cmserver-ssh"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: tcp.proxyssh-{{"{{"}}.ID{{"}}"}}
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: confdssh
+              cluster: cmconfssh-server-{{"{{"}}.ID{{"}}"}}
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbConfdSSH.log"
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-esymac-service"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: tcp.proxy-{{"{{"}}.ID{{"}}"}}
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: esymac
+              cluster: esymac-server-{{"{{"}}.ID{{"}}"}}
+              access_log:
+               name: envoy.file_access_log
+               config:
+                path: "/var/DebugTrace/envoylb/envoylbesymac{{"{{"}}.Port{{"}}"}}.log"
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}  
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-esymactls-"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: tcp.proxy-{{"{{"}}.ID{{"}}"}}
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: esymactls
+              cluster: zts-esymactls-{{"{{"}}.ID{{"}}"}}
+              access_log:
+               name: envoy.file_access_log
+               config:
+                path: "/var/DebugTrace/envoylb/envoylbesymactls{{"{{"}}.Port{{"}}"}}.log"
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}         
+      clusters:
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "integration-netact"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: integrationservicenetact
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        upstream_bind_config:
+          source_address:
+            address: {{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}
+            port_value: 0
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: {{"{{"}}.Address{{"}}"}}
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+        http_protocol_options: {}
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-cmserver-netconf"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: cmconf-server-{{"{{"}}.ID{{"}}"}}
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: zts-cmserver-netconf-service-{{ .Values.global.clustername }}-{{"{{"}}.ID{{"}}"}}.service.{{ .Values.global.datacenter }}
+            port_value: 7070
+            protocol: TCP
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-cmserver-ssh"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: cmconfssh-server-{{"{{"}}.ID{{"}}"}}
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: zts-cmserver-ssh-service-{{ .Values.global.clustername }}-{{"{{"}}.ID{{"}}"}}.service.{{ .Values.global.datacenter }}
+            port_value: 6060
+            protocol: TCP
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-esymac-service"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: esymac-server-{{"{{"}}.ID{{"}}"}}
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: zts-esymac-service-{{ .Values.global.clustername }}-{{"{{"}}.ID{{"}}"}}.service.{{ .Values.global.datacenter }}
+            port_value: 7070
+            protocol: TCP
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "zts-esymactls-"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: zts-esymactls-{{"{{"}}.ID{{"}}"}}
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: zts-esymactls-{{ .Values.global.clustername }}-{{"{{"}}.ID{{"}}"}}.service.{{ .Values.global.datacenter }}
+            port_value: 7071
+            protocol: TCP
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "sftpserver-logagent"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: sftpserverlogagent-{{"{{"}}.ID{{"}}"}}
+        type: STATIC
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        upstream_bind_config:
+          source_address:
+            address: {{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}
+            port_value: 0
+        hosts:
+        - socket_address:
+            address: {{"{{"}}.Address{{"}}"}}
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}
+        {{"{{"}} range services  {{"}}"}}{{"{{"}}if .Name |regexMatch "splunkserver-logagent"{{"}}"}}{{"{{"}}range service .Name{{"}}"}}
+      - name: splunkserverlogagent-{{"{{"}}.ID{{"}}"}}
+        type: STATIC
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        upstream_bind_config:
+          source_address:
+            address: {{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}
+            port_value: 0
+        hosts:
+        - socket_address:
+            address: {{"{{"}}.Address{{"}}"}}
+            port_value: {{"{{"}}.Port{{"}}"}}
+            protocol: TCP
+        {{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}{{"{{"}}end{{"}}"}}

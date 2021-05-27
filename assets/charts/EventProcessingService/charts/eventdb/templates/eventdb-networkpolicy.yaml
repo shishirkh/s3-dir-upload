@@ -1,0 +1,36 @@
+{{- if .Values.NetworkPolicy }}
+{{- if .Values.NetworkPolicy.Enabled }}
+---
+kind: NetworkPolicy
+apiVersion: {{ template "eventdb.networkPolicy.apiVersion" . }}
+metadata:
+  name: {{ template "eventdb.fullname" . }}
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ template "eventdb.fullname" . }}
+  ingress:
+  - ports:
+    - port: 9042
+    {{- if not .Values.NetworkPolicy.AllowExternal }}
+    from:
+    # Allow other cassanda db's to connect to form cluster.
+    - podSelector:
+        matchLabels:
+          app: {{ template "eventdb.fullname" . }}
+    {{- end }}
+    - port: 7000
+    {{- if not .Values.NetworkPolicy.AllowExternal }}
+    from:
+    # Allow other cassanda db's to connect to form cluster.
+    - podSelector:
+        matchLabels:
+          app: {{ template "eventdb.fullname" . }}
+    {{- end }}
+{{- end }}
+{{- end }}

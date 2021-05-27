@@ -1,0 +1,117 @@
+# Default values for EventProcessingService.
+# Author: Naveen Kumar T G
+# This is a YAML-formatted file.
+# Declare name/value pairs to be passed into your templates.
+#
+
+global:
+ #imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets: 
+  name: art-regcred
+ casecret: zts1ztssecret
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: "ZTS"
+ vnfname: zts1
+ vnfctype: "EFS"
+ clustername: "zts1"
+ datacenter: "dc1"
+ consulAgentDnsPortInt: 8600
+ counteralarmtracelevel: "error"
+
+countersenv:
+  channelbuffsize : 1000
+ 
+
+image:
+  envoyimage:
+    PullPolicy: Always
+  initcontainersimage:
+    PullPolicy: Always
+  consul:
+   pullPolicy: Always
+  efsmonitor:
+   dockerTag: 1.5.37
+   pullPolicy: Always
+  consulregistration:
+   pullPolicy: Always
+  fluentbit:
+   pullPolicy: Always
+
+
+configmap:
+  name: configmapefsmonitor
+  labels:
+    app: configmapefsmonitor-label
+
+ExternalIP: 10.96.173.96
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.json"
+  - "--mode serve"
+  - "--v2-config-only"
+consulmetadata:
+  name: cmserver
+  labels:
+    app: cmserverapp
+
+consulserver:
+ servicename: sdservice
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  domainName: "default.svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+
+efsmonitor:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 1000m
+
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+

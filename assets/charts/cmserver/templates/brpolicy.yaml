@@ -1,0 +1,21 @@
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: cmserver
+spec:
+  volumes:
+  - cmserverpv-{{ .Release.Name }}
+  - confdpv-{{ .Release.Name }}
+  backend:
+    mode: AVAMAR
+  cronSpec: 0 0 * * *
+  k8sType: statefulset
+  brOption: 2
+  maxiCopy: 2
+  hooks:
+  - name: cmserver-container
+    commands:
+      preBackupCmd: ["sh", "-c", "echo preBackupCmd > /tmp/preb.txt"]
+      postBackupCmd: ["sh", "-c", "echo post-backup > /tmp/posb.txt" ]
+      preRestoreCmd: ["sh", "-c", "monit stop cmserver;/opt/cmbase/confdbase/bin/confd --stop;sleep 5s"]
+      postRestoreCmd: ["sh", "-c", "monit start cmserver;sleep 5s"]

@@ -1,0 +1,37 @@
+{{- if .Values.cbur.enabled }}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  {{- if eq .Values.fluentd.kind "Deployment" }}
+  name: {{ template "fullname" . }}
+  {{- end }}
+  {{- if eq .Values.fluentd.kind "DaemonSet" }}
+  name: {{ template "fullname" . }}-daemonset
+  {{- end }}
+  {{- if eq .Values.fluentd.kind "StatefulSet" }}
+  name: {{ template "fullname" . }}-statefulset
+  {{- end }}
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  k8sobjects:
+  - object-type: configmaps
+    match-criteria: name
+    match-string: {{ .Release.Name }}-belk-fluentd
+  backend:
+    mode: "{{ .Values.cbur.backendMode }}"
+  cronSpec: "{{ .Values.cbur.cronJob }}"
+  autoEnableCron: {{ .Values.cbur.autoEnableCron }}
+  maxiCopy: {{ .Values.cbur.maxCopy }}
+  k8sType: {{ .Values.fluentd.kind | lower }}
+  hooks:
+  - name: fluentd
+    commands:
+      preBackupCmd: []
+      postBackupCmd: []
+      preRestoreCmd: []
+      postRestoreCmd: []
+{{- end}}

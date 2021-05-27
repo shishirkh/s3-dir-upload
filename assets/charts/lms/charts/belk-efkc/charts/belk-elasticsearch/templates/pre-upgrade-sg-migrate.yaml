@@ -1,0 +1,124 @@
+{{- if .Values.searchguard.enable }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "fullname" . }}-sa-admin
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    # hhok-failed is not working so using before-hook-creation
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ template "fullname" . }}-rolebinding
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-7"
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "fullname" . }}-sa-admin
+  namespace: "{{.Release.Namespace}}"
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ template "fullname" . }}-role
+  apiGroup: ""
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: "{{.Release.Namespace}}"
+  name: {{ template "fullname" . }}-role
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+rules:
+- apiGroups: ["", "extensions", "apps", "batch"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "fullname" . }}-preupgrade-sg-job
+  labels:
+    app: {{ template "name" . }}
+  annotations:
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ template "name" . }}
+    spec:
+      serviceAccountName: {{ template "fullname" . }}-sa-admin
+      restartPolicy: Never
+      volumes:
+      - name: kubectl
+        hostPath:
+          path: /usr/local/bin/kubectl
+
+      containers:
+      - name: upgrade-sg-job
+        image: "{{ .Values.global.registry1 }}/{{ .Values.kubectl.image.repo }}:{{ .Values.kubectl.image.tag }}"
+        command:
+        - sh
+        - -c
+        - |
+          pod=$(kubectl get pods  --namespace {{ .Release.Namespace }} -l role=client,component=elasticsearch --no-headers=true | grep Running | grep {{ .Release.Name }} | sort -r |  awk '{ print$1 }' | tail -1)
+          kubectl exec -it ${pod} --namespace {{ .Release.Namespace }} -- bash -c '[ -d /usr/share/elasticsearch/plugins/search-guard-6 ] && [ ! -z "$(ls -A /usr/share/elasticsearch/plugins/search-guard-6)" ]'
+          if [ $? -eq 0 ]; then
+            echo "Checking if the configmap exists.. Deleting if it exists.."
+            kubectl delete cm elk-version-check --namespace {{ .Release.Namespace }}
+            kubectl create cm elk-version-check --from-literal=ElkVersion=ELK-6 --namespace {{ .Release.Namespace }}
+            kubectl get cm {{ template "fullname" . }}-searchguard-config --namespace {{ .Release.Namespace }} -o yaml > /tmp/sg-6-cm.yml
+            cd /tmp
+            var=$(grep name: sg-6-cm.yml) && sed -i "s/$var/$var-6/g" sg-6-cm.yml
+            kubectl delete cm {{ template "fullname" . }}-searchguard-config-6  --namespace {{ .Release.Namespace }}
+            kubectl create -f /tmp/sg-6-cm.yml
+          else
+            echo "SG migration is not needed"
+          fi
+
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop:
+              - all
+        volumeMounts:
+        - name: kubectl
+          mountPath: /kubectl
+        resources:
+{{ toYaml .Values.jobResources | indent 10 }}
+{{- end }}
+

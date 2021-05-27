@@ -1,0 +1,50 @@
+## Enable or disable components of umbrella chart for EFKC.
+tags:
+  belk-fluentd: false
+  belk-elasticsearch: true
+  belk-kibana: true
+  belk-curator: true
+
+## To overwrite child helm chart values by parent define:
+## chart_name:
+##   parameters in values.yaml in child chart
+
+## Overwrite values for elasticsearch
+belk-elasticsearch:
+  elasticsearch_master:
+    replicas: {{ (elasticsearch | default(1)).replicasMaster | default(model.properties.elasticsearch.properties.replicasMaster.default) }}
+    cpu_limit: {{ (elasticsearch | default("")).cpuMaster | default(model.properties.elasticsearch.properties.cpuMaster.default) }}
+    cpu_requests: {{ (elasticsearch | default("")).cpuMaster | default(model.properties.elasticsearch.properties.cpuMaster.default) }}
+    memory_limit: {{ (elasticsearch | default(512)).memoryMaster | default(model.properties.elasticsearch.properties.memoryMaster.default) }}Mi
+    memory_requests: {{ (elasticsearch | default(512)).memoryMaster | default(model.properties.elasticsearch.properties.memoryMaster.default) }}Mi 
+    no_of_masters: {{ (elasticsearch | default(1)).replicasMaster | default(model.properties.elasticsearch.properties.replicasMaster.default) }}
+    http_enable: true
+    es_java_opts: "-Djava.net.preferIPv4Stack=true -Xms{{ (elasticsearch | default(512)).memoryMaster | default(model.properties.elasticsearch.properties.memoryMaster.default) }}m -Xmx{{ (elasticsearch | default(512)).memoryMaster | default(model.properties.elasticsearch.properties.memoryMaster.default) }}m"
+    discovery_service: "elasticsearch-discovery"
+  elasticsearch_client:
+    replicas: {{ (elasticsearch | default(1)).replicasClient | default(model.properties.elasticsearch.properties.replicasClient.default) }}
+    cpu_limit: {{ (elasticsearch | default("")).cpuClient | default(model.properties.elasticsearch.properties.cpuClient.default) }}
+    cpu_requests: {{ (elasticsearch | default("")).cpuClient | default(model.properties.elasticsearch.properties.cpuClient.default) }}
+    memory_limit: {{ (elasticsearch | default(512)).memoryClient | default(model.properties.elasticsearch.properties.memoryClient.default) }}Mi
+    memory_requests: {{ (elasticsearch | default(512)).memoryClient | default(model.properties.elasticsearch.properties.memoryClient.default) }}Mi
+    es_java_opts: "-Djava.net.preferIPv4Stack=true -Xms{{ (elasticsearch | default(512)).memoryClient | default(model.properties.elasticsearch.properties.memoryClient.default) }}m -Xmx{{ (elasticsearch | default(512)).memoryClient | default(model.properties.elasticsearch.properties.memoryClient.default) }}m"
+  esdata:
+    replicas: {{ (elasticsearch | default(1)).replicasData | default(model.properties.elasticsearch.properties.replicasData.default) }}
+    es_java_opts_data: "-Xms{{ (elasticsearch | default(512)).memoryData | default(model.properties.elasticsearch.properties.memoryData.default) }}m -Xmx{{ (elasticsearch | default(512)).memoryData | default(model.properties.elasticsearch.properties.memoryData.default) }}m"
+  persistence:
+    size: {{ (elasticsearch | default(1)).storageData | default(model.properties.elasticsearch.properties.storageData.default) }}Gi
+
+## Overwrite values for kibana
+belk-kibana:
+  kibana:
+    cpu_limit: {{ (kibana | default("")).cpu | default(model.properties.kibana.properties.cpu.default) }}
+    cpu_requests: {{ (kibana | default("")).cpu | default(model.properties.kibana.properties.cpu.default) }}
+  kibanabaseurl:
+    url: "/{{ namespace}}/kibana"
+  ingress:
+    sso: true
+  service:
+    name: kibana
+
+## Overwrite values for curator
+## Nothing to overwrite.

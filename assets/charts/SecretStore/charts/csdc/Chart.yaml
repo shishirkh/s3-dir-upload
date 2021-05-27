@@ -1,0 +1,18 @@
+appVersion: "3.3"
+description: A distributed, reliable key-value store for the most critical data of
+  a distributed system. Supported ETCD API v3.
+engine: gotpl
+home: https://coreos.com/etcd/
+keywords:
+- ETCD
+- CSDC
+- discovery
+- 'X-COMPAAS: { "CATEGORY": "Databases", "SVC_NAME": "Etcd", "SVC_TYPE": "CSDC", "SVC_SCOPE":
+  [ "PRIVATE" ] }'
+maintainers:
+- email: csf-csdc@list.nokia.com
+  name: CSDC Team
+name: csdc
+sources:
+- https://github.com/coreos/etcd
+version: 2.1.8

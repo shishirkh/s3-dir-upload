@@ -1,0 +1,299 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: efsmonitor
+  labels:
+    app: efsmonitor
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: efsmonitor
+        release: {{ .Release.Name }}
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: EPS_Service
+    spec:
+      volumes:
+      - name: efsmonitorpvc
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: configmapenvoyefsmonitor
+      - name: shared-data-envoy
+        emptyDir: {}
+      - name: shared-data
+        emptyDir: {}
+      - name: certs
+        emptyDir: {}
+      - name: data
+        emptyDir: {}
+      - name: config-volume
+        configMap:
+          name: fluent-bit-config-eps-efsmonitor
+
+
+
+      containers:
+        - name: efsmonitor-container
+          image: "{{ .Values.global.imageRegistry }}/efsmonitor:{{ .Values.image.efsmonitor.dockerTag }}"
+          imagePullPolicy: {{ .Values.image.efsmonitor.pullPolicy }}
+          resources:
+            requests:
+              memory: {{ .Values.efsmonitor.resources.requests.memory | quote }}
+              cpu: {{ .Values.efsmonitor.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.efsmonitor.resources.limits.memory | quote }}
+              cpu: {{ .Values.efsmonitor.resources.limits.cpu | quote }}
+          env:
+            - name: traceLevel
+              value: trace
+            - name: "SETTINGIPADDR"
+              value: "127.0.0.1"
+            - name: "SETTINGPORT"
+              value: "8888"
+            - name: "CLUSTERNAME"
+              value: {{.Values.global.clustername}}
+            - name: "SEEDIPADDR"
+              value: "127.0.0.1"
+            - name: "SEEDPORT"
+              value: "8448"
+            - name: "configIP"
+              value: "127.0.0.1"
+            - name: "configAccessPort"
+              value: "8888"
+            - name: "EPS_ADDR"
+              value: "127.0.0.1"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "{{ .Values.global.vnfctype }}"
+            - name: "NAMESPACE"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+          ports:
+            - name: grpcport
+              containerPort: 8448
+          volumeMounts:
+           - name: efsmonitorpvc
+             mountPath: "/opt/efsmonitor/persistancebase"
+           - mountPath: "/opt/log/"
+             name: shared-data
+
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.fluentbit.PullPolicy }}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          volumeMounts:
+            - name: shared-data
+              mountPath: /var/log
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+            - name: config-volume
+              mountPath: /fluent-bit/etc
+          env:
+            - name: TARGET_IP
+              value: "127.0.0.1"
+            - name: TARGET_PORT
+              value: "8888"
+            - name: "traceLevel"
+              value: "error"
+            - name: "logRetention"
+              value: "2"
+            - name: "logPath"
+              value: "/opt/log"
+            - name: VNFNAME
+              value: {{ .Values.global.vnfname }}
+            - name: VNFCTYPE
+              value: "{{ .Values.global.vnfctype }}"
+            - name: VNFTYPE
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFCNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name 
+
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoyimage.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+           - name: config
+             mountPath: /etc/envoy
+           - name: certs
+             mountPath: /certs
+           - name: shared-data-envoy
+             mountPath: /var/DebugTrace/EnvoySideCar
+          env:
+           - name: secretuserzts
+             valueFrom:
+              secretKeyRef:
+               name: {{ .Values.global.casecret }}
+               key: username
+           - name: secretpasswordzts
+             valueFrom:
+               secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: password
+           - name: CNNAME
+             value: "efsmonitor-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+           - name: CASERVICEFQDN
+             value: caserverservice.{{.Release.Namespace}}.svc.cluster.local
+           - name: "EPS_ADDR"
+             value: "localhost"
+           - name: "EPS_PORT"
+             value: "6061"
+           - name: "DATACENTER"
+             value: "{{ .Values.global.datacenter }}"
+           - name: "CLUSTERNAME"
+             value: "{{ .Values.global.clustername }}"
+           - name: "METADATA_MAX_RELEASE"
+             value: "{{ .Values.global.metadata_max_release }}"
+           - name: "METADATA_MIN_RELEASE"
+             value: "{{ .Values.global.metadata_min_release }}"
+           - name: "VNFTYPE"
+             value: "{{ .Values.global.vnftype }}"
+           - name: "VNFNAME"
+             value: "{{ .Values.global.vnfname }}"
+           - name: "VNFCTYPE"
+             value: "{{ .Values.global.vnfctype }}"
+           - name: "traceLevel"
+             value: "{{ .Values.global.counteralarmtracelevel }}"
+           - name: "CHANNEL_BUFFER_SIZE"
+             value: "{{ .Values.countersenv.channelbuffsize }}"
+           - name: "NAMESPACE"
+             valueFrom:
+              fieldRef:
+               fieldPath: metadata.namespace
+
+        - name: "registrationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulregistration.pullPolicy }}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+          - name: "SDSFQDN"
+            value: "127.0.0.1"
+          - name: "ZTSNAME"
+            value: {{ .Values.global.clustername }}
+          - name: "SERVICENAME"
+            value: "efsmonitor"
+          command: ["sh","consulreg.sh"]
+          
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"] 
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           - name: NODE_NAME
+             value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulserver.servicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: "{{ .Release.Namespace }}.svc.cluster.local" 
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+          volumeMounts:
+               - name: data
+                 mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent      
+
+      
+

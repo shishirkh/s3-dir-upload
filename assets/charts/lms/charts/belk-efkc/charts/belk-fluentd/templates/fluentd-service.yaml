@@ -1,0 +1,31 @@
+{{- if .Values.fluentd.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+{{- with .Values.fluentd.service.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+{{- end }}
+  labels:
+    k8s-app: {{ template "fullname" .  }}-es
+    version: v1.22
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+{{- if .Values.fluentd.service.custom_name }}
+  name: {{ .Values.fluentd.service.custom_name }}
+{{- else }}
+  name: {{ template "fullname" .  }}
+{{- end }}
+spec:
+  type: {{ .Values.fluentd.service.type }}
+  ports:
+    - name: forwarder-expose
+      port: {{ .Values.fluentd.service.port }}
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.fluentd.service.metricsPort }}
+      protocol: TCP
+  selector:
+    k8s-app: {{ template "fullname" .  }}-es
+    version: v1.22
+{{- end }}

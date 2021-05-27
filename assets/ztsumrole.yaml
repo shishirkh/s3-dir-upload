@@ -1,0 +1,76 @@
+cmserver:
+
+ Roles:
+
+  Role1: admin
+
+  Role2: read
+
+  Role3: write
+
+ Groups:
+
+  cmadmins: admin,read,write
+
+  cmusers: read
+  
+trackerservice:
+
+ Roles:
+
+  Role1: admin
+
+  Role2: read
+
+  Role3: write
+
+ Groups:
+
+  trackerAdminGroup: admin,read,write
+
+  trackerUserGroup: read
+ 
+SecretStore:
+
+ Roles:
+
+  Role1: admin
+
+  Role2: read
+
+  Role3: write
+
+ Groups:
+
+  ssadmin: admin,read,write
+
+datasync:
+
+ Roles:
+
+  Role1: admin
+
+  Role2: read
+
+  Role3: write
+
+ Groups:
+
+  dsadmins: admin,read,write
+
+IntegrationService:
+
+ Roles:
+
+  Role1: admin
+
+  Role2: read
+
+  Role3: write
+
+ Groups:
+
+  settingsAdminGroup: admin,read,write
+
+  settingsUserGroup: read
+

@@ -1,0 +1,13 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: integrationpersistance-pvc-claim
+  labels:
+    release: {{.Release.Name}}
+spec:
+  storageClassName: glusterfs-storageclass
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi

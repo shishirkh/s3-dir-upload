@@ -1,0 +1,34 @@
+{{- if  .Values.cbur.enabled }}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: {{ template "eventdb.fullname" . }}
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ template "eventdb.fullname" . }}
+  volumes:
+  {{- if .Values.persistence.backup }}
+  - {{ default "backup" .Values.volumeClaim.backup.name | quote }}
+  {{- else }}
+  - {{ default "data" .Values.volumeClaim.name }}/cassandra/backup
+  {{- end }}
+  backend:
+    mode: {{ default "local" .Values.cbur.backendMode }}
+  cronSpec: {{ default "0 0 * * *" .Values.cbur.cronSpec }}
+  k8sType: statefulset
+  brOption: {{ default 2 .Values.cbur.brOption }}
+  maxiCopy: {{ default 5 .Values.cbur.maxiCopy }}
+  hooks:
+  - name: {{ template "eventdb.fullname" . }}
+    commands:
+      preBackupCmd: ["/bin/sh", "-c", "/opt/cass-tools/scripts/backup.sh start -dbonly -local"]
+      postBackupCmd: ["/bin/sh", "-c", "/opt/cass-tools/scripts/backup.sh clean"]
+      preRestoreCmd: ["/bin/sh", "-c", "/opt/cass-tools/scripts/backup.sh clean"]
+      postRestoreCmd: ["/bin/sh", "-c", "[[ $(hostname | rev | cut -c 1) = '0' ]] && /opt/cass-tools/scripts/backup.sh restore -dbonly -local -restoreKS -truncate=all || /opt/cass-tools/scripts/backup.sh restore -dbonly -local; /opt/cass-tools/scripts/backup.sh clean"]
+{{- end }} #cbur.enabled

@@ -1,0 +1,23 @@
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: custom-metrics-apiserver #<--must have the same name as deployment/statefulset which you want to backup
+  namespace: {{ .Release.Namespace }}
+spec:
+  volumes:
+  - cmabackup   #<---volume name you want to backup. NOTE: not mount path
+  backend:
+    mode: "avamar"           #use 'local' for now.
+  cronSpec: "0 0 * * *"  #<--cronjob frequency, here means very 10 minutes of every day ()
+  dataEncryption:
+    enable: true            #<--Whether to encrypt the backed up data or not.
+  k8sType: deployment      #<--The values should be deployment/statefulset, case insensitive. This is newly added for CSF18.09.
+  brOption: 2         #<--This value only applies to statefulset. The value can be 0,1 or 2.
+  maxiCopy: 2               #<--the maximum copy you want to saved.
+  hooks:
+  - name: kubectlcontainer  #<---container name in the pod where you want to execute hooks.
+    commands:
+      preBackupCmd: ["sh", "-c", "/opt/k8sbase/scripts/getInfo.sh /opt/k8sbase/scripts/k8sObj.cfg"]  #<--command will be executed after sidecar insert
+      postBackupCmd: ["sh", "-c", "echo backupfinished > /tmp/bkpdone"]               #<--command will be executed before removing sidecar and after backup(scp)
+      preRestoreCmd: ["sh", "-c", "echo restoreStarted > /tmp/reststarted"]               #<--command will be executed after sidecar insert
+      postRestoreCmd: ["sh", "-c", "/opt/k8sbase/scripts/scaleObj.sh /opt/k8sbase/scripts/k8sObj.cfg"] #<-- comand will be executed before removing sidecar and after retore(scp)

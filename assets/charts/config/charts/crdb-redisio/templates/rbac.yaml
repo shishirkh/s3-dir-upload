@@ -1,0 +1,97 @@
+{{- if .Values.rbacEnabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "persistentvolumeclaims", "secrets", "services"]
+  verbs: ["get", "list", "patch", "update", "delete"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "patch", "update", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-9"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "persistentvolumeclaims", "secrets"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+subjects:
+- kind: ServiceAccount
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ template "config-crdb-redisio.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- end }}

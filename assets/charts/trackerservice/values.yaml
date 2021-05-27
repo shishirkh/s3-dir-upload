@@ -1,0 +1,18 @@
+global:
+ imageRegistry: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ consulAgentDnsIpInt:
+ consulAgentDnsPortInt: 8600 
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+ vnfname:
+#set false to use emptyDir 
+ persistentVolume:
+  enabled: true

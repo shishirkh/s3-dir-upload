@@ -1,0 +1,39 @@
+
+                _._                                                  
+           _.-``__ ''-._                                             
+      _.-``    `.  `_.  ''-._           Welcome to Redis (redis.io)
+  .-`` .-```.  ```\/    _.,_ ''-._
+ (    '      ,       .-`  | `,    )     Provided courtesy of the Nokia CSF CRDB Team.
+ |`-._`-...-` __...-.``-._|'` _.-'|
+ |    `-._   `._    /     _.-'    |
+  `-._    `-._  `-./  _.-'    _.-'      http://nok.it/CRDB
+ |`-._`-._    `-.__.-'    _.-'_.-'|     http://redis.io
+ |    `-._`-._        _.-'_.-'    |
+  `-._    `-._`-.__.-'_.-'    _.-'
+ |`-._`-._    `-.__.-'    _.-'_.-'|
+ |    `-._`-._        _.-'_.-'    |
+  `-._    `-._`-.__.-'_.-'    _.-'
+      `-._    `-.__.-'    _.-'
+          `-._        _.-'
+              `-.__.-'
+
+
+Database connection
+===================
+The Redis database can be accessed within this K8s cluster at the following URI:
+{{ include "crdb-redisio.db.uri" . }}
+
+To connect to the database
+===========================
+1. Run a pod that you can use as a client
+    kubectl run {{ template "crdb-redisio.fullname" . }}-client --rm --tty -i --image {{ include "crdb-redisio.gr" . }}/{{ .Values.server.image.name }}:{{ .Values.server.image.tag }} --command -- sh
+
+2. Connect using the redis-cli
+    redis-cli -u {{ include "crdb-redisio.db.uri" . }}
+
+{{ if .Values.admin.debug -}}
+Debug information
+=================
+To run an admin pod for debugging
+    kubectl run {{ template "crdb-redisio.fullname" . }}-admin-debug --rm --tty -i --image {{ include "crdb-redisio.admin.image.name" . }}{{ if .Values.rbacEnabled }}--serviceaccount={{ template "crdb-redisio.fullname" . }}{{- end }} --namespace {{ .Release.Namespace }} --command -- sh
+{{- end -}}

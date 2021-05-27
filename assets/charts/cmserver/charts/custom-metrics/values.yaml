@@ -1,0 +1,124 @@
+# Default values for exampleservice.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ counteralarmtracelevel: "error"
+ consulAgentDnsIpInt:
+ consulAgentDnsPortInt: 8600
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: zts
+ vnfname: zts1
+ vnfctype: CM
+#set lcmdeploy value to false if not deployed via lcm script
+# lcmdeploy: true
+
+image:
+  # cmdata:
+  #   dockerTag: 1.5.31
+  #   pullPolicy: Always
+  # k8s:
+  #   dockerTag: 1.5.31
+  #   pullPolicy: Always
+  kubectlweb:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  envoy:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  fluentbit:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  consul:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  consulregistration:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  cbura:
+   #give the latest version since "latest" tag is not present
+   dockerTag: 1.5.31
+   pullPolicy: Always
+
+
+countersenv:
+  channelbuffsize: 1000
+
+consulmetadata:
+  name: cmserver
+  # labels:
+  #   app: cmserverapp
+
+consulserver:
+ servicename: sdservice
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+kubectl:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+cburasidecar:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m

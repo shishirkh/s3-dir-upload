@@ -1,0 +1,454 @@
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: envoylb1-sa-{{ .Release.Namespace }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: {{ .Release.Name }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: masterrealmconfigroleenvoylbf
+  labels:
+    release: {{ .Release.Name }}
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: privileged-role-binding-envoylb1-{{ .Release.Namespace }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: {{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: masterrealmconfigroleenvoylbf
+subjects:
+  - kind: ServiceAccount
+    name: envoylb1-sa-{{ .Release.Namespace }}
+    namespace: {{ .Release.Namespace }}
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: {{ .Values.metadata.namef}}
+  labels:
+    app: {{ .Values.metadata.labels.app }}
+    chart: {{ template "ztslenvoylb.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+   type: RollingUpdate
+   rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.metadata.labels.app }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: {{ .Values.metadata.labels.app }}
+        release: {{ .Release.Name }}
+        vnfType  : "{{ .Values.global.vnftype }}"
+        vnfName : "{{ .Values.global.vnfname }}"
+        vnfcType: "LB"
+        serviceType: "LB"
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+      annotations:
+       {{ if eq .Values.global.bcmtversion "19" }}
+       danm.k8s.io/interfaces: |
+          [
+            {
+              "network":"default",
+              "ip": "dynamic"
+            },
+            {
+              "network":"{{ .Values.global.danmconfig.danm_edge_nw_name}}",
+{{ if eq .Values.global.ipv6interface "enable" }}
+              "ip6": "{{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}/{{ .Values.global.danmconfig.subnetmask }}",
+              "proutes6": {"{{ .Values.global.danmconfig.danm_route}}":"{{ .Values.global.danmconfig.danm_route_gw}}"}
+{{ else }}
+              "ip": "{{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}/{{ .Values.global.danmconfig.subnetmask }}",
+              "proutes": {"{{ .Values.global.danmconfig.danm_route}}":"{{ .Values.global.danmconfig.danm_route_gw}}"}
+{{ end }}
+            }
+          ]
+       {{ else }}
+       networks: '[
+          { "name": "calico"},
+          { "name": "danm"}
+        ]'
+       danm.k8s.io/interfaces: |
+          [
+            {
+              "network":"{{ .Values.global.danmconfig.danm_edge_nw_name}}",
+{{ if eq .Values.global.ipv6interface "enable" }}
+              "ip6": "{{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}/{{ .Values.global.danmconfig.subnetmask }}",
+              "proutes6": {"{{ .Values.global.danmconfig.danm_route}}":"{{ .Values.global.danmconfig.danm_route_gw}}"}
+{{ else }}
+              "ip": "{{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}/{{ .Values.global.danmconfig.subnetmask }}",
+              "proutes": {"{{ .Values.global.danmconfig.danm_route}}":"{{ .Values.global.danmconfig.danm_route_gw}}"}
+{{ end }}
+            }
+          ]
+       {{ end }}
+    spec:
+      serviceAccountName: envoylb1-sa-{{ .Release.Namespace }}
+      containers:
+        - name: ztsenvoylbf
+          image: "{{ .Values.global.imageRegistry }}/envoyhotrestartimagewithtls:{{ .Values.image.envoyimage.cieditTag  }}"
+          imagePullPolicy: {{ .Values.image.envoyimage.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.ztsenvoylbf.resources.requests.memory | quote }}
+              cpu: {{ .Values.ztsenvoylbf.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.ztsenvoylbf.resources.limits.memory | quote }}
+              cpu: {{ .Values.ztsenvoylbf.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: {{ .Values.envoyports.envoyContainerPort }}
+          volumeMounts:
+            - name: shared-data
+              mountPath: /var/DebugTrace/envoylb
+            - name: config
+              mountPath: /etc/envoy
+            - name: certs
+              mountPath: /certs
+          env:
+            - name: secretuserzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: username
+            - name: secretpasswordzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: password
+
+            - name: CNNAME
+              value: "{{ .Values.consulenv.ztslenvoylbregid }}-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+            - name: CASERVICEFQDN
+              value: "caserverservice.{{.Release.Namespace}}.svc.cluster.local"
+            - name: "EPS_ADDR"
+              value: "127.0.0.1"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "DATACENTER"
+              value: "{{ .Values.global.datacenter }}"
+            - name: "CLUSTERNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "LB"
+            - name: "DEBUG_FLAG"
+              value: "{{ .Values.global.envoydebugflag }}"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+            - name: "CHANNEL_BUFFER_SIZE"
+              value: "{{ .Values.countersenv.channelbuffsize }}"
+        - name: ztsenvoylbdyn
+          image: "{{ .Values.global.imageRegistry }}/envoyhotrestartimagewithtls:{{ .Values.image.envoyimage.cieditTag  }}"
+          imagePullPolicy: {{ .Values.image.envoyimage.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.ztsenvoylbdyn.resources.requests.memory | quote }}
+              cpu: {{ .Values.ztsenvoylbdyn.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.ztsenvoylbdyn.resources.limits.memory | quote }}
+              cpu: {{ .Values.ztsenvoylbdyn.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: {{ .Values.envoyports.envoyContainerDynPort }}
+          volumeMounts:
+            - name: shared-datatest
+              mountPath: /var/DebugTrace/envoylb
+            - name: configdyn
+              mountPath: /etc/envoy
+            - name: certsdyn
+              mountPath: /certs
+          env:
+            - name: secretuserzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: username
+            - name: secretpasswordzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: password
+
+            - name: CNNAME
+              value: "{{ .Values.consulenv.ztslenvoylbregid }}-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+            - name: CASERVICEFQDN
+              value: "caserverservice.{{.Release.Namespace}}.svc.cluster.local"
+            - name: "EPS_ADDR"
+              value: "127.0.0.1"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "DATACENTER"
+              value: "{{ .Values.global.datacenter }}"
+            - name: "CLUSTERNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "LB"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+            - name: "CHANNEL_BUFFER_SIZE"
+              value: "{{ .Values.countersenv.channelbuffsize }}"
+            - name: "ENVOYSECINS"
+              value: "yes"
+            - name: "DEBUG_FLAG"
+              value: "{{ .Values.global.envoydebugflag }}"
+        - name: squid
+          image: {{ .Values.global.imageRegistry }}/squid:{{.Values.image.squid.dTag }}
+          imagePullPolicy: {{ .Values.image.squid.pullPolicy }}
+          securityContext:
+            runAsUser: 23
+          resources:
+            requests:
+              memory: {{ .Values.squid.resources.requests.memory | quote }}
+              cpu: {{ .Values.squid.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.squid.resources.limits.memory | quote }}
+              cpu: {{ .Values.squid.resources.limits.cpu | quote }}
+          volumeMounts:
+            - name: configsquid
+              mountPath: /etc/squid/squid.conf
+              subPath: squid.conf
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           - name: NODE_NAME
+             value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulserver.servicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: "{{.Release.Namespace}}.svc.cluster.local"
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+          volumeMounts:
+               - name: data
+                 mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.fluentbit.pullPolicy}}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          env:
+              - name: TARGET_IP
+                value: "127.0.0.1"
+              - name: TARGET_PORT
+                value: "8888"
+              - name: "traceLevel"
+                value: "error"
+              - name: "logRetention"
+                value: "2"
+              - name: "logPath"
+                value: "/opt/log"
+              - name: VNFNAME
+                value: "{{ .Values.global.vnfname }}"
+              - name: "PODNAME"
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+              - name: VNFCTYPE
+                value: "{{ .Values.global.vnfctype }}"
+              - name: VNFTYPE
+                value: "ZTS"
+              - name: "VNFCNAME"
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+          volumeMounts:
+              - name: shared-data
+                mountPath: /var/log
+              - name: shared-datatest
+                mountPath: /var/log/ztslbdynamic
+              - name: config-volume
+                mountPath: /fluent-bit/etc
+        - name: "registrationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulregistration.pullPolicy }}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SERVICENAME"
+              value: {{ .Values.consulenv.ztslenvoylbregid }}
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: {{ .Values.global.clustername }}
+            - name: "ZTSCLUSTERLBEXTIP"
+              value: {{ .Values.global.danmconfig.ztslenvoylbdanmip1 }}
+            - name: "MY_NODE_NAME"
+              value: "lb1"
+          command: ["sh","consulreg.sh"]
+        - name: "registrationcontainerint"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulregistration.pullPolicy }}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.init.resources.requests.memory | quote }}
+              cpu: {{ .Values.init.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.init.resources.limits.memory | quote }}
+              cpu: {{ .Values.init.resources.limits.cpu | quote }}
+          env:
+            - name: "SERVICENAME"
+              value: {{ .Values.consulenv.ztslenvoylbregidint }}
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: {{ .Values.global.clustername }}
+            - name: "MY_NODE_NAME"
+              value: "lb1"
+          command: ["sh","consulreg.sh"]
+      terminationGracePeriodSeconds: {{ .Values.global.terminationGracePeriodSeconds }}
+      nodeSelector:
+        "is_edge" : "true"
+      tolerations:
+      - key: 'is_edge'
+        operator: 'Equal'
+        value: 'true'
+        effect: 'NoExecute'
+      volumes:
+        - name: data
+          emptyDir: {}
+        {{ if eq .Values.global.ztsca "enable" }}
+        - name: certs
+          emptyDir: {}
+        - name: certsdyn
+          emptyDir: {}
+        {{ else }}
+        - name: certs
+          secret:
+            secretName: selfsigncert 
+        - name: certsdyn
+          secret:
+            secretName: selfsigncertdyn
+        {{ end }}
+        - name: config
+          configMap:
+            name: configmapenvoylbcpserver
+        - name: configdyn
+          configMap:
+            name: configmapenvoylbcpserverdynlb1
+        - name: shared-data
+          emptyDir: {}
+        - name: configsquid
+          configMap:
+            name: configmapsquidlb1
+        - name: shared-datatest
+          emptyDir: {}
+        - name: config-volume
+          configMap:
+            name: fluent-bit-config-servicemesh 

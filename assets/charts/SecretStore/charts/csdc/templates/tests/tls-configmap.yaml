@@ -1,0 +1,42 @@
+{{- if .Values.service.tls -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ .Release.Name }}-001-sdc-tls-status-test-configmap"
+  namespace: {{ .Release.Namespace }}
+data:
+  run.sh: |
+    #!/bin/bash
+    let retry=60
+    let i=1
+    while [ $i -lt $retry ]
+    do
+      unset RC
+      ETCDCTL_API=3 etcdctl --cert /etc/tls/client-cert/..data/client.pem  --key /etc/tls/client-cert/..data/client-key.pem  --cacert /etc/tls/ca-cert/..data/ca.pem --endpoints https://$ENDPOINT_URL:$CLIENT_PORT endpoint health || RC=$?
+      if [[ $RC == "" ]]
+      then
+          ls -l /etc/etcd/etcd.client.conf
+          cat /etc/etcd/etcd.client.conf
+          echo "try to set key"
+          sdcctl set system test_key 1
+          sdcctl set system test_key1 2
+          sdcctl set system test_key2 3
+          sdcctl set system test_key3 4
+          echo "try to get key"
+          sdcctl get system test_key
+          echo "try to list key"
+          sdcctl ls system --recursive /
+          echo "try to rm key"
+          sdcctl rm system test_key
+          sdcctl rm system test_key1
+          sdcctl rm system test_key2
+          sdcctl rm system test_key3
+
+        exit 0
+      else
+        let "i+=1"
+        sleep 10
+        continue
+      fi 
+    done
+{{- end -}}

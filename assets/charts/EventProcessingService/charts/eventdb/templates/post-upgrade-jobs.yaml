@@ -1,0 +1,230 @@
+{{- if .Values.rbac.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "eventdb.fullname" . }}-saadminpost
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role 
+metadata:
+  name: {{ template "eventdb.fullname" . }}-cradminpost
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+rules:
+#- apiGroups:
+#  - extensions
+#  resources:
+#  - thirdpartyresources
+#  verbs:  ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+#- apiGroups:
+#  - apiextensions.k8s.io
+#  resources:
+#  - customresourcedefinitions
+#  verbs:  ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:  ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - configmaps
+  - secrets
+  verbs:  ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods/exec
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods/attach
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods/status
+  verbs: ['get', 'list', 'watch']
+- apiGroups: ['']
+  resources:
+  - services
+  - endpoints
+  verbs: ['get', 'create', 'update']
+#- apiGroups: ['']
+#  resources:
+#  - nodes
+#  verbs: ['list', 'watch']
+#- apiGroups: ['']
+#  resources:
+#  - namespaces
+#  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims", "secrets"]
+  verbs: ['create',"get", "list", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ template "eventdb.fullname" . }}-namespace-adminpost
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "eventdb.fullname" . }}-saadminpost
+  namespace: "{{.Release.Namespace}}"
+roleRef:
+  kind: Role
+  name: {{ template "eventdb.fullname" . }}-cradminpost
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "eventdb.fullname" . }}-post-upgrade-jobs
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: {{ template "eventdb.fullname" . }}
+      {{- if .Values.istio }}
+      {{- if .Values.istio.enabled }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+      {{- end }}
+      {{- end }}
+    spec:
+    ## if rbac enabled use the created service account
+    {{- if .Values.rbac.enabled }}
+      serviceAccountName: {{ template "eventdb.fullname" . }}-saadminpost
+    {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: post-upgrade-admin
+        {{- if and .Values.global .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- else if .Values.admin.image.registry }}
+        image: "{{ .Values.admin.image.registry}}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- end }}
+        imagePullPolicy: IfNotPresent
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+        command:
+          - sh
+          - "-c"
+          - |
+            echo "Starting post-upgrade job"
+            # Migrate secret - continuation from pre-upgrade job
+            kubectl get secret {{ template "eventdb.fullname" . }} --namespace {{ .Release.Namespace }} > /dev/null 2>&1
+            [[ $? -eq 1 ]] && {
+              echo "Post-upgrade: LCM event upgrade - need to migrate secret"
+              # Recreate the secret from tmp secret created in pre-upgrade job
+              kubectl get secret {{ template "eventdb.fullname" . }}-tmp --namespace {{ .Release.Namespace }} -o yaml > /tmp/.secret.yaml
+              sed -i 's/name: {{ template "eventdb.fullname" . }}-tmp/name: {{ template "eventdb.fullname" . }}/' /tmp/.secret.yaml
+              kubectl apply -f /tmp/.secret.yaml
+              kubectl delete secret {{ template "eventdb.fullname" . }}-tmp > /dev/null 2>&1
+              kubectl annotate secret {{ template "eventdb.fullname" . }} helm.sh/hook=pre-install helm.sh/hook-delete-policy=hook-failed helm.sh/hook-weight="-5"
+            }
+
+            # Find current number of release pods
+            export pod_count=$(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | grep {{ template "eventdb.fullname" . }}-[0-9] | wc -l)
+            # Post-scalein Cluster size
+            export scalecnt={{ .Values.replica_count }}
+
+            while [ $((pod_count)) -ne $((scalecnt)) ]
+            do
+              # scale in/out events
+              sleep 10
+              pod_count=$(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | grep {{ template "eventdb.fullname" . }}-[0-9] | wc -l)
+            done
+
+
+            # Update the cluster replication factor
+            kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- /opt/cass-tools/scripts/cassandra.sh --alterSystemAuth
+        {{- if .Values.deleteJob.auto_remove_pvc }}
+            # Find the PVC name
+            for pvc_id in $(kubectl get pvc --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | sort -r |  awk '{ print$1 }')
+            do
+              pod_pvc_id=${pvc_id##*-}
+              if [ $((pod_pvc_id)) -gt $((scalecnt -1)) ]
+              then
+                kubectl delete pvc ${pvc_id} --namespace {{ .Release.Namespace }}
+              fi
+            done
+        {{- end }}
+
+            for pod_id in $(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | grep {{ template "eventdb.fullname" . }}-[0-9] | sort -r |  awk '{ print$1 }')
+            do
+              kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- [ -f /opt/cass-tools/.lcm_heal_repair ] >/dev/null 2>&1
+              #ret=`echo $?`
+              if [ $? -eq 0 ]
+              then
+                kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- rm -f /opt/cass-tools/.lcm_heal_repair
+                kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- /opt/cassandra/bin/nodetool repair --full >/dev/null 2>&1
+              fi
+              # Check for password change
+              kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- [ -f /opt/cass-tools/.lcm_cassandra_superpass ] >/dev/null 2>&1
+              if [ $? -eq 0 ]
+              then
+                # Recreate the POD for the env variable to change
+                # No need to delete the marker file then
+                kubectl delete pod ${pod_id} --namespace {{ .Release.Namespace }}
+                sleep 30
+                is_ready=$(kubectl describe pod ${pod_id} --namespace {{ .Release.Namespace }} | grep " Ready .*True" | awk '{ print $2 }')
+                while [ "${is_ready}" != "True" ]
+                do
+                  sleep 10
+                  is_ready=$(kubectl describe pod ${pod_id} --namespace {{ .Release.Namespace }} | grep " Ready .*True" | awk '{ print $2 }')
+                done
+              fi
+            done
+            #kubectl exec -it  -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- bash -c "chmod 755 /CASSANDRA_DD/cassandra/schema.sh; /CASSANDRA_DD/cassandra/schema.sh /CASSANDRA_DD/cassandra/schema.cql" > /tmp/post-upgrade-logs
+            for i in {1..3}
+            do
+              kubectl exec -it  -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- bash -c "chmod 755 /CASSANDRA_DD/cassandra/schema.sh; /CASSANDRA_DD/cassandra/schema.sh /CASSANDRA_DD/cassandra/schema.cql" >> /tmp/post-upgrade-logs
+              cat /tmp/post-upgrade-logs | grep "rows imported"
+              if [ $? -eq 0 ]
+              then
+                break
+              fi
+            done
+            kubectl cp /tmp/post-upgrade-logs --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/post-upgrade-logs -c cassandra-sidecar
+            echo "Finished post-upgrade job"

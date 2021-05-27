@@ -1,0 +1,200 @@
+# values_template.ymal
+---
+
+###
+### General Parameters: pod management, security
+###
+
+## RBAC: is it enabled? should be create RBAC role?
+rbac:
+  enabled: {{ (rbac | default("")).enabled | default(model.properties.rbac.properties.enabled.default) }}
+  create: {{ (rbac | default("")).create | default(model.properties.rbac.properties.create.default) }}
+
+###
+### Cassandra Container and configuration parameters
+###
+registry: {{ (image | default("")).registry | default(model.properties.image.properties.registry.default) }}
+
+image:
+  registry: {{ (image | default("")).registry | default(model.properties.image.properties.registry.default) }}
+  repository: {{ (image | default("")).repository | default(model.properties.image.properties.repository.default) }}
+  csfTag: {{ (image | default("")).csfTag | default(model.properties.image.properties.csfTag.default) }}
+  pullPolicy: "IfNotPresent"
+
+## Value for the number of replica in a cluster
+replica_count: {{ NumOf_Replicas | default(model.properties.NumOf_Replicas.default) }}
+
+antiAffinity: {{ (config | default("")).antiAffinity | default(model.properties.config.properties.antiAffinity.default) }}
+
+service:
+  type: ClusterIP
+  clusterIP: None
+
+persistence:
+  storageClass: {{ compaas.storageClass }}
+  accessMode: ReadWriteOnce
+  size: {{ (resources | default("")).persistence | default(model.properties.resources.properties.persistence.default) }}
+  backup:
+    enabled: {{ (resources | default("")).backup_volume_enabled | default(model.properties.resources.properties.backup_volume_enabled.default) }}
+    storageClass: {{ compaas.storageClass }}
+    accessMode: ReadWriteOnce
+    size: {{ (resources | default("")).persistenceBackup | default(model.properties.resources.properties.persistenceBackup.default) }}
+
+deleteJob:
+  auto_remove_pvc: {{ (config | default("")).remove_pvc | default(model.properties.config.properties.remove_pvc.default) }}
+  auto_remove_secret: {{ (config | default("")).remove_secret | default(model.properties.config.properties.remove_secret.default) }}
+
+resources:
+  requests:
+    memory: {{ (resources | default("")).memory | default(model.properties.resources.properties.memory.default) }}
+    cpu: {{ (resources | default("")).cpu | default(model.properties.resources.properties.cpu.default) }}
+  limits:
+    memory: {{ (resources | default("")).memory | default(model.properties.resources.properties.memory.default) }}
+    cpu: {{ (resources | default("")).cpu | default(model.properties.resources.properties.cpu.default) }}
+  java_heapsize: {{ (resources | default("")).java_heapsize | default(model.properties.resources.properties.java_heapsize.default) }}
+  java_newsize: {{ (resources | default("")).java_newsize | default(model.properties.resources.properties.java_newsize.default) }}
+
+minconfig:
+  {%- if (config | default("")).use_minconfig is defined and config.use_minconfig %}
+  Enabled: true
+  MIN_CONFIG: "yes"
+  {%- else %}
+  Enabled: false
+  MIN_CONFIG: "no"
+  {%- endif %}
+  overrideResources: true
+  resources:
+    requests:
+      memory: 640Mi
+      cpu: 1
+    limits:
+      memory: 640Mi
+      cpu: 1
+  java_heapsize: 128m
+  java_newsize: 12m
+
+config:
+  cluster_name: MyCluster
+  cluster_datacenter: {{ (config | default("")).cluster_datacenter | default(model.properties.config.properties.cluster_datacenter.default) }}
+  SS_CASSANDRA_SETUP_FIREWALL_RULES: false
+  ETCDCTL_KEY_FILE: /etc/etcd/ssl/etcd-client-key.pem
+  ETCDCTL_CERT_FILE: /etc/etcd/ssl/etcd-client.pem
+  ETCDCTL_CA_FILE: /etc/etcd/ssl/ca.pem
+  cassandra_datadir: CASSANDRA_DD
+  use_etcd: nouse
+  cassandra_superuser: {{ (config | default("")).user | default(model.properties.config.properties.user.default) }}
+  cassandra_superpass: {{ config.passwd }}
+  RPC_SERVER_TYPE: {{ (config | default("")).RPC_SERVER_TYPE | default(model.properties.config.properties.RPC_SERVER_TYPE.default) }}
+  CONCURRENT_READS: {{ (config | default("")).CONCURRENT_READS | default(model.properties.config.properties.CONCURRENT_READS.default) }}
+  CONCURRENT_WRITES: {{ (config | default("")).CONCURRENT_WRITES | default(model.properties.config.properties.CONCURRENT_WRITES.default) }}
+  COMPACTION_THROUGHPUT: {{ (config | default("")).COMPACTION_THROUGHPUT | default(model.properties.config.properties.COMPACTION_THROUGHPUT.default) }}
+  CONCURRENT_COMPACTORS: {{ (config | default("")).CONCURRENT_COMPACTORS | default(model.properties.config.properties.CONCURRENT_COMPACTORS.default) }}
+  RPC_MIN_THREADS: {{ (config | default("")).RPC_MIN_THREADS | default(model.properties.config.properties.RPC_MIN_THREADS.default) }}
+  RPC_MAX_THREADS: {{ (config | default("")).RPC_MAX_THREADS | default(model.properties.config.properties.RPC_MAX_THREADS.default) }}
+  KEY_CACHE_SIZE: {{ (config | default("")).KEY_CACHE_SIZE | default(model.properties.config.properties.KEY_CACHE_SIZE.default) }}
+
+  ports:
+    cql: 9042
+  listen_address: {{ (config | default("")).listen_address | default(model.properties.config.properties.listen_address.default) }}
+  seed_count: {{ (config | default("")).listen_address | default(model.properties.config.properties.seed_count.default) }}
+  seeds: {{ (config | default("")).seeds | default(model.properties.config.properties.seeds.default) }}
+  cluster_domain: {{ (config | default("")).cluster_domain | default(model.properties.config.properties.cluster_domain.default) }}
+  hostNetwork: {{ (config | default("")).hostNetwork | default(model.properties.config.properties.hostNetwork.default) }}
+
+## liveness probe config
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+livenessProbe:
+  initialDelaySeconds: {{ (livenessProbe | default("")).initialDelaySeconds | default(model.properties.livenessProbe.properties.initialDelaySeconds.default) }}
+  periodSeconds: {{ (livenessProbe | default("")).periodSeconds | default(model.properties.livenessProbe.properties.periodSeconds.default) }}
+  timeoutSeconds: {{ (livenessProbe | default("")).timeoutSeconds | default(model.properties.livenessProbe.properties.timeoutSeconds.default) }}
+  successThreshold: {{ (livenessProbe | default("")).successThreshold | default(model.properties.livenessProbe.properties.successThreshold.default) }}
+  failureThreshold: {{ (livenessProbe | default("")).failureThreshold | default(model.properties.livenessProbe.properties.failureThreshold.default) }}
+  commandOverridesEnabled: {{ (livenessProbe | default("")).commandOverridesEnabled | default(model.properties.livenessProbe.properties.commandOverridesEnabled.default) }}
+  commandOverrides: '[ "/bin/sh", "-c", "[ -f /opt/cass-tools/.lcm_scalein ] || [ -f /opt/cass-tools/.lcm_cassandra_superpass ] || /opt/cassandra/bin/nodetool status" ]'
+
+## readiness probe config
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+readinessProbe:
+  initialDelaySeconds: {{ (readinessProbe | default("")).initialDelaySeconds | default(model.properties.readinessProbe.properties.initialDelaySeconds.default) }}
+  periodSeconds: {{ (readinessProbe | default("")).periodSeconds | default(model.properties.readinessProbe.properties.periodSeconds.default) }}
+  timeoutSeconds: {{ (readinessProbe | default("")).timeoutSeconds | default(model.properties.readinessProbe.properties.timeoutSeconds.default) }}
+  successThreshold: {{ (readinessProbe | default("")).successThreshold | default(model.properties.readinessProbe.properties.successThreshold.default) }}
+  failureThreshold: {{ (readinessProbe | default("")).failureThreshold | default(model.properties.readinessProbe.properties.failureThreshold.default) }}
+  commandOverridesEnabled: {{ (readinessProbe | default("")).commandOverridesEnabled | default(model.properties.readinessProbe.properties.commandOverridesEnabled.default) }}
+  commandOverrides: '[ "/bin/sh", "-c", "[ -f /opt/cass-tools/.lcm_scalein ] || [ -f /opt/cass-tools/.lcm_cassandra_superpass ] || /opt/cassandra/bin/nodetool status | grep -E \"^UN\\s+${POD_IP}\"" ]'
+
+###
+### Adminstration related container and Job parameters
+###
+admin:
+  image:
+    registry: {{ (image | default("")).registry | default(model.properties.image.properties.registry.default) }}
+    repository: "tools/kubectl"
+    csfTag: "v1.12.3"
+    pullPolicy: "IfNotPresent"
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 100m
+
+  ## Exposes the hook-delete-policy.  By default, this is set to delete the
+  ## hooks only upon success.  In helm v2.9+, this should be set to
+  ## before-hook-creation.  This can also be unset to avoid hook deletion
+  ## for troubleshooting and debugging purposes
+  hook_delete_policy: "hook-succeeded"
+
+## LCM parameters
+lcm:
+  ## heal flag
+  heal_tag: {{ (lcm | default("")).heal_recovery_tag | default(model.properties.lcm.properties.heal_recovery_tag.default) }}
+
+###---------------------------
+### CBUR Parameters
+###---------------------------
+
+cbur:
+  enabled: {{ (cbur | default("")).enabled | default(model.properties.cbur.properties.enabled.default) }}
+  ## defines the backup storage options, i.e. local, NetBackup, S3, Avamar.
+  backendMode: {{ cbur.backendMode | default(model.properties.cbur.properties.backendMode.default) }}
+  ## allows user to schedule backups
+  cronSpec: {{ cbur.cronSpec| default(model.properties.cbur.properties.cronSpec.default) }}
+  ## defines backup behavior for statefulsets
+  brOption: {{ cbur.brOption | default(model.properties.cbur.properties.brOption.default) }}
+  ## defines how many backup copies should be saved
+  maxiCopy: {{ cbur.maxiCopy | default(model.properties.cbur.properties.maxiCopy.default) }}
+  
+  image:
+    registry: {{ (image | default("")).registry | default(model.properties.image.properties.registry.default) }}
+    repository: "cbur/cbura"
+    csfTag: "1.0.3-770"
+    pullPolicy: "IfNotPresent"
+
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+    runAsGroup: 1000
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 100m
+
+metrics:
+  enabled: {{ (metrics | default("")).enabled | default(model.properties.metrics.properties.enabled.default) }}
+  annotate_service: {{ (metrics | default("")).annotate_service | default(model.properties.metrics.properties.annotate_service.default) }}
+  agent:
+    name: "cassandra-exporter-agent"
+    version: "0.9.5"
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9500"
+    
+istio:
+  enabled: {{ (istio | default("")).enabled | default(model.properties.istio.properties.enabled.default) }}
+  

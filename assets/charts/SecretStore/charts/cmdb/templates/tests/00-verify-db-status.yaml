@@ -1,0 +1,198 @@
+#
+# Tests that simply verify that the database accessibility and replication
+# on each mariadb pod
+#
+---
+
+# Verify the database can be accessed on each mariadb pod
+# (a) Ensure monitoring and the db are not disabled
+# (b) Verify mariadb_db --verify-access Success
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "cmdb.fullname" . }}-test-db-verify-access
+  labels:
+    {{- include "cmdb-test.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+    "helm.sh/hook-weight": "1"
+spec:
+  restartPolicy: Never
+  {{- if .Values.rbac_enabled }}
+  serviceAccountName: {{ template "cmdb.fullname" . }}
+  {{- else }}
+  securityContext:
+    runAsUser: 0
+  {{- end }}
+  containers:
+  - name: db-verify-not-disabled
+    {{- include "cmdb-admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    volumeMounts:
+    - name: cluster-cm
+      mountPath: /chart
+    command:
+    - bash
+    - "-c"
+    - |
+      set -euo pipefail
+      . /chart/cluster.env
+      for id in $(seq 0 $((CLUSTER_SIZE-1))); do
+          kubectl exec -n ${K8S_NAMESPACE} ${K8S_PREFIX}-mariadb-${id} -- test ! -f /tmp/.mariadb_disable
+      done
+       
+    env:
+    - name: K8S_NAMESPACE
+      value: "{{ .Release.Namespace }}"
+    - name: K8S_PREFIX
+      value: {{ template "cmdb.fullname" . }}
+
+  - name: db-verify-access
+    {{- include "cmdb-admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    volumeMounts:
+    - name: cluster-cm
+      mountPath: /chart
+    command:
+    - bash
+    - "-c"
+    - |
+      set -euo pipefail
+      . /chart/cluster.env
+      for id in $(seq 0 $((CLUSTER_SIZE-1))); do
+          kubectl exec -n ${K8S_NAMESPACE} ${K8S_PREFIX}-mariadb-${id} -- mariadb_db --verify-access --verbose
+      done
+       
+    env:
+    - name: K8S_NAMESPACE
+      value: "{{ .Release.Namespace }}"
+    - name: K8S_PREFIX
+      value: {{ template "cmdb.fullname" . }}
+
+
+  volumes:
+  - name: cluster-cm
+    configMap:
+      name: {{ template "cmdb.fullname" . }}-mariadb-cluster
+---
+
+{{- if contains "master" .Values.cluster_type }}
+# Verify replication on mariadb pods for master-slave or master-master
+# (a) Verify mariadb_db --verify-replication Success on mon-masters
+# (b) Verify mariadb_db --verify-replication Success on master for geo_red
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "cmdb.fullname" . }}-test-db-verify-replication
+  labels:
+    {{- include "cmdb-test.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+    "helm.sh/hook-weight": "1"
+spec:
+  restartPolicy: Never
+  {{- if .Values.rbac_enabled }}
+  serviceAccountName: {{ template "cmdb.fullname" . }}
+  {{- else }}
+  securityContext:
+    runAsUser: 0
+  {{- end }}
+  containers:
+  - name: db-verify-replication
+    {{- include "cmdb-admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    volumeMounts:
+    command:
+    - bash
+    - "-c"
+    - |
+      set -euo pipefail
+      # Need to exclude master as replication may not be setup there, unless multi-DC
+      for pod in $(kubectl get pod -l${K8S_LABELS},type=mariadb,mariadb-master!=yes -o jsonpath={.items[*].metadata.name}); do
+          kubectl exec -n ${K8S_NAMESPACE} ${pod} -- mariadb_db --verify-replication --verbose
+      done
+       
+    env:
+    - name: K8S_NAMESPACE
+      value: "{{ .Release.Namespace }}"
+    - name: K8S_LABELS
+      value: app={{ template "cmdb.fullname" . }}
+
+  volumes:
+  - name: cluster-cm
+    configMap:
+      name: {{ template "cmdb.fullname" . }}-mariadb-cluster
+
+{{- end }}
+
+{{- if and (.Values.geo_redundancy) (contains "master" .Values.cluster_type) }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "cmdb.fullname" . }}-test-db-verify-geored-replication
+  labels:
+    {{- include "cmdb-test.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+    "helm.sh/hook-weight": "2"
+spec:
+  restartPolicy: Never
+  {{- if .Values.rbac_enabled }}
+  serviceAccountName: {{ template "cmdb.fullname" . }}
+  {{- else }}
+  securityContext:
+    runAsUser: 0
+  {{- end }}
+  containers:
+  - name: db-verify-geored-replication
+    {{- include "cmdb-admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    volumeMounts:
+    command:
+    - bash
+    - "-c"
+    - |
+      set -euo pipefail
+      # Only run on master for multi-DC
+      for pod in $(kubectl get pod -l${K8S_LABELS},type=mariadb,mariadb-master==yes -o jsonpath={.items[*].metadata.name}); do
+          kubectl exec -n ${K8S_NAMESPACE} ${pod} -- mariadb_db --verify-replication --verbose
+      done
+       
+    env:
+    - name: K8S_NAMESPACE
+      value: "{{ .Release.Namespace }}"
+    - name: K8S_LABELS
+      value: app={{ template "cmdb.fullname" . }}
+
+  volumes:
+  - name: cluster-cm
+    configMap:
+      name: {{ template "cmdb.fullname" . }}-mariadb-cluster
+{{- end }}

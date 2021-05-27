@@ -1,0 +1,230 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ template "elasticsearch.data.fullname" . }}
+  labels:
+    component: elasticsearch
+    role: data 
+    release: {{ .Release.Name | quote }}
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }} 
+spec:
+  serviceName: elk
+  podManagementPolicy: {{ .Values.esdata.podManagementPolicy }}
+  updateStrategy:
+{{ toYaml .Values.esdata.updateStrategy | indent 4 }}
+  replicas: {{.Values.esdata.replicas}} 
+  template:
+    metadata:
+      labels:
+        component: elasticsearch
+        role: data 
+        release: {{ .Release.Name | quote }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/es-secret.yaml") . | sha256sum }}
+        {{- if .Values.service.prometheus_metrics.enabled }}
+        {{- if .Values.searchguard.enable }}
+        prometheus.io/scheme: "https"
+        {{ .Values.service.prometheus_metrics.pro_annotation_https_scrape }}: "true"
+        {{- else }}
+        prometheus.io/scrape: "true"
+        {{- end }}
+        prometheus.io/path: /_prometheus/metrics
+        prometheus.io/port: "9200"
+        {{- end }}
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      {{- if or .Values.esdata.antiAffinity .Values.esdata.nodeAffinity }}
+      affinity:
+      {{- end }}
+      {{- if eq .Values.esdata.antiAffinity "hard" }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchLabels:
+                  role: data
+                  release: {{ .Release.Name | quote }}
+                  component: elasticsearch
+      {{- else if eq .Values.esdata.antiAffinity "soft" }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: {{.Values.esdata.podweight}}
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  role: data
+                  release: {{ .Release.Name | quote }}
+                  component: elasticsearch
+      {{- end }}
+      {{- with .Values.esdata.nodeAffinity }}
+        nodeAffinity:
+{{ toYaml . | indent 10 }}
+      {{- end }}
+{{- if eq .Values.global.efkStorage "local-storage" }}
+      nodeSelector:
+        disktype: efkstorage
+{{- else }}
+{{- if .Values.esdata.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.esdata.nodeSelector | indent 8 }}
+{{- end }}
+{{- end }}
+{{- if .Values.esdata.tolerations }}
+      tolerations:
+{{ toYaml .Values.esdata.tolerations | indent 8 }}
+{{- end }}
+      containers:
+      - name: es-data 
+        {{- if .Values.searchguard.enable }}
+        image: {{.Values.global.registry}}/{{.Values.searchguard.image.repo}}:{{.Values.searchguard.image.tag}}
+        {{- else }}
+        image: {{.Values.global.registry}}/{{.Values.elasticsearch_master.image.repo}}:{{.Values.elasticsearch_master.image.tag}}
+        {{- end }}
+        imagePullPolicy: {{.Values.elasticsearch_master.ImagePullPolicy}}
+        resources:
+{{ toYaml .Values.esdata.resources | indent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+             drop:
+               - all
+        env:
+          - name: "CLUSTER_NAME"
+            value: {{ printf "%s-%s" .Release.Namespace .Release.Name | quote }}
+          - name: "NODE_MASTER"
+            value: "false"
+          - name: "NODE_DATA"
+            value: "true" 
+          - name: "ES_JAVA_OPTS"
+            value: "{{.Values.esdata.es_java_opts}}"
+          - name: "DISCOVERY_SERVICE"
+            value: "{{ template "elasticsearch.fullname" . }}-discovery"
+          - name: NETWORK_HOST
+            value: "{{.Values.network_host}}"
+          {{- if .Values.cbur.enabled }}
+          - name: "PATH_REPO"
+            value: "/elasticsearch-backup"
+          {{- end }}
+          - name: "CLIENT_PORT"
+            value: "{{.Values.service.client_port}}"
+          - name: "ELASTICSEARCH_SERVICE"
+            value: "{{.Values.service.name}}"
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          {{- if .Values.searchguard.enable }}
+          - name: HTTP_SSL
+            value: "{{.Values.searchguard.http_ssl}}"
+          - name: "KEYSTORE_TYPE"
+            value: "{{.Values.searchguard.keystore_type}}"
+          - name: "KEYSTORE_FILEPATH"
+            value: "/etc/elasticsearch/certs/keystore.jks"
+          - name: "KS_PWD"
+            valueFrom:
+              secretKeyRef:
+                name: {{ template "fullname" . }}
+                key: keypass
+          - name: "TRUSTSTORE_TYPE"
+            value: "{{.Values.searchguard.truststore_type}}"
+          - name: "TRUSTSTORE_FILEPATH"
+            value: "/etc/elasticsearch/certs/truststore.jks"
+          - name: "TS_PWD"
+            valueFrom:
+              secretKeyRef:
+                name: {{ template "fullname" . }}
+                key: trustpass
+          - name: "CLIENT_KEYSTORE_FILEPATH"
+            value: "/etc/elasticsearch/certs/client-keystore.jks"
+          - name: "AUTH_ADMIN_DN"
+            value: "{{.Values.searchguard.auth_admin_identity}}"
+          - name: "SG_CONFIG_DIRECTORY"
+            value: "/usr/share/elasticsearch/plugins/search-guard-7/sgconfig/"
+          {{- end }}
+        ports:
+        - containerPort: {{.Values.service.master_port}}
+          name: transport 
+          protocol: TCP
+        volumeMounts:
+        - name: datadir
+          mountPath: /data
+        {{- if .Values.cbur.enabled }}
+        - name: elasticsearch-backup
+          mountPath: /elasticsearch-backup
+        {{- end }}
+        {{- if .Values.searchguard.enable }}
+        - name: ssl
+          mountPath: "/etc/elasticsearch/certs/"
+          readOnly: true
+        - name: searchguard-config
+          mountPath: "/usr/share/elasticsearch/plugins/search-guard-7/sgconfig/"
+        {{- end }}
+      {{- if .Values.cbur.enabled }}
+      - name: cbura-sidecar
+        image: {{ .Values.global.registry1 }}/{{ .Values.cbur.cbura.imageRepo }}:{{ .Values.cbur.cbura.imageTag }}
+        imagePullPolicy: {{ .Values.cbur.cbura.imagePullPolicy }}
+        resources:
+{{ toYaml .Values.cbur.cbura.resources | indent 10 }}
+        securityContext:
+            runAsUser: {{ .Values.cbur.cbura.userId }}
+        volumeMounts:
+        - name: "elasticsearch-backup"
+          mountPath: /elasticsearch-backup
+        - mountPath: /tmp
+          name: "cbura-sidecar-volume"
+      {{- end}}
+      volumes:
+      {{- if .Values.searchguard.enable }}
+      - name: ssl
+        secret:
+          secretName: {{ template "fullname" . }}
+          items:
+          - key: keystore.jks
+            path: keystore.jks
+          - key: truststore.jks
+            path: truststore.jks
+          - key: client-keystore.jks
+            path: client-keystore.jks
+          - key: admin.crt.pem
+            path: admin.crt.pem
+          - key: admin.key.pem
+            path: admin.key.pem
+      - configMap:
+          name: {{ template "fullname" . }}-searchguard-config
+        name: searchguard-config 
+      {{- end }} 
+      {{- if .Values.cbur.enabled }} 
+      - name: "elasticsearch-backup"
+        persistentVolumeClaim:
+          claimName: {{ template "fullname" . }}-pvc
+      - name: "cbura-sidecar-volume"
+        persistentVolumeClaim:
+          claimName: {{ template "fullname" . }}-cbur-tmp-pvc
+      {{- end }}
+  volumeClaimTemplates:
+  - metadata:
+      name: datadir
+      labels:
+       app: {{ template "fullname" . }}
+       release: "{{ .Release.Name }}"
+       heritage: "{{ .Release.Service }}"
+    spec:
+      accessModes:
+        - {{ .Values.persistence.accessMode | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.size | quote }}
+    {{- if .Values.persistence.storageClassName }}
+      storageClassName: "{{ .Values.global.efkStorage }}"
+    {{- end }}

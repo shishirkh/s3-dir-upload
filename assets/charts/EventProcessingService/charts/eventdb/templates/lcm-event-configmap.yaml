@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "eventdb.fullname" . }}-lcm-event
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+    csf-component: ccas
+    csf-subcomponent: kubectl
+    ccas-dbtype: cassandra-apache
+data:
+  heal_tag: |-
+    {{ .Values.lcm.heal_tag | default "none" }}

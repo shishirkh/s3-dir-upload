@@ -1,0 +1,296 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: cmreader
+  labels:
+    app: cmreader
+    chart: {{ template "cmserver.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: 3
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: cmreader
+        release: {{ .Release.Name }}
+        vnfType  : {{ .Values.global.vnftype }}
+        vnfName : {{ .Values.global.vnfname }}
+        vnfcType : {{ .Values.global.vnfctype }}
+        serviceType: CM
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+    spec:
+      volumes:
+      - name: cmreaderstoragepvc
+        emptyDir: {}
+
+      - name: config
+        configMap:
+          name: configmapenvoycmreader
+
+      - name: certs
+        emptyDir: {}
+
+      - name: data
+        emptyDir: {}
+
+      - name: shared-data
+        emptyDir: {}
+      - name: config-volume
+        configMap:
+          name: fluent-bit-config-cmreader
+      - name: shared-data-envoy
+        emptyDir: {}
+
+      containers:
+        - name: cmreader-container
+          image: "{{ .Values.global.imageRegistry }}/cmreader:{{ .Values.image.cmreader.dockerTag }}"
+          imagePullPolicy: {{ .Values.image.cmreader.pullPolicy }}
+          resources:
+            requests:
+              memory: {{ .Values.cmreader.resources.requests.memory | quote }}
+              cpu: {{ .Values.cmreader.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.cmreader.resources.limits.memory | quote }}
+              cpu: {{ .Values.cmreader.resources.limits.cpu | quote }}
+          env:
+            - name: "REPO_ADDRESS"
+              value: "0.0.0.0"
+            - name: "CONFIGPATH"
+              value: "/opt/cmbase/persistentStorage"
+            - name: "CMDATA_ADDR"
+              value: "cmmaster"
+            - name: "CMDATA_PORT"
+              value: "6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cm-crdb-redisio-redis-secrets
+                  key: redis-password
+            - name: "EPS_ADDR"
+              value: "localhost"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "{{ .Values.global.vnfctype }}"
+            - name: "PODNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: "NAMESPACE"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          ports:
+            - name: grpcport
+              containerPort: 9997
+          volumeMounts:
+           - name: cmreaderstoragepvc
+             mountPath: "/opt/cmbase/persistentStorage"
+           - name: shared-data
+             mountPath: "/dump/CMREPOTrace"
+
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.fluentbit.pullPolicy}}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          env:
+              - name: TARGET_IP
+                value: "127.0.0.1"
+              - name: TARGET_PORT
+                value: "8888"
+              - name: "traceLevel"
+                value: "trace"
+              - name: "logRetention"
+                value: "2"
+              - name: "logPath"
+                value: "/opt/log"
+              - name: "VNFTYPE"
+                value: "{{ .Values.global.vnftype }}"
+              - name: "VNFNAME"
+                value: "{{ .Values.global.vnfname }}"
+              - name: "VNFCTYPE"
+                value: "{{ .Values.global.vnfctype }}"
+              - name: "VNFCNAME"
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+
+          volumeMounts:
+              - name: shared-data
+                mountPath: /var/log
+              - name: shared-data-envoy
+                mountPath: /var/DebugTrace/EnvoySideCar
+              - name: config-volume
+                mountPath: /fluent-bit/etc
+
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.envoy.pullPolicy}}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/envoy
+            - name: certs
+              mountPath: /certs
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+          env:
+            - name: secretuserzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: username
+            - name: secretpasswordzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: password
+            - name: CNNAME
+              value: "cmreader-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: CASERVICEFQDN
+              value: caserverservice.{{ .Release.Namespace }}.svc.cluster.local
+            - name: "EPS_ADDR"
+              value: "localhost"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "DATACENTER"
+              value: "{{ .Values.global.datacenter }}"
+            - name: "CLUSTERNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "{{ .Values.global.vnfctype }}"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+            - name: "CHANNEL_BUFFER_SIZE"
+              value: "{{ .Values.countersenv.channelbuffsize }}"
+
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           - name: NODE_NAME
+             value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulserver.servicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: "{{ .Release.Namespace }}.svc.cluster.local"
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+
+          volumeMounts:
+               - name: data
+                 mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+
+        - name: "registrationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulregistration.pullPolicy }}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: {{ .Values.global.clustername }}
+            - name: "SERVICENAME"
+              value: "cmreader-service"
+            - name: MY_NODE_NAME
+              valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+
+          command: ["sh","consulreg.sh"]

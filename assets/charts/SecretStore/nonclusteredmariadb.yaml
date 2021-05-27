@@ -1,0 +1,6 @@
+# SecretStore:
+#   cmdb:
+#    cluster_type: "simplex"
+#    mariadb:
+#      count: 1
+

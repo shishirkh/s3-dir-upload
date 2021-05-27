@@ -1,0 +1,150 @@
+#
+# Performs various tests to ensure pod labels are as expected.  The pod labels
+# are managed by the rolemon sidecar container and control how the K8s service(s)
+# route traffic to the proper pods
+#
+{{- $replicas := sub (int .Values.server.count) 1 }}
+---
+#
+# Tests that one and exactly one master pod exists (role=master label)
+# and server.count-1 replica pods exist (role=slave label)
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.name.podname }}-test-role-label-counts
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  {{- if .Values.rbacEnabled }}
+  serviceAccountName: {{ template "crdb-redisio.fullname" . }}
+  {{- end }}
+  restartPolicy: Never
+  containers:
+  - name: test-1-master
+    {{- include "crdb-redisio.admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      master_count=$(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=master | wc -l)
+      (( master_count == 1 )) || {
+          echo "Unexpected Master count: $master_count; expecting exactly 1"
+          exit 1
+      }
+{{- if (gt (int .Values.server.count) 1) }}
+  - name: test-{{ $replicas }}-replica
+    {{- include "crdb-redisio.admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      replica_count=$(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=slave | wc -l)
+      (( replica_count == {{ $replicas }} )) || {
+          echo "Unexpected Replica/Slave count: $replica_count; expecting exactly {{ $replicas }}"
+          exit 1
+      }
+{{- end }}
+
+---
+#
+# Tests that the master pod has an expected num_slaves_label
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.name.podname }}-test-numslaves-label-counts
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  {{- if .Values.rbacEnabled }}
+  serviceAccountName: {{ template "crdb-redisio.fullname" . }}
+  {{- end }}
+  restartPolicy: Never
+  containers:
+  - name: test-master-numslaves
+    {{- include "crdb-redisio.admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      num_slaves=$(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=master -ojsonpath="{.items[0].metadata.labels['redisio_num_slaves']}")
+      (( num_slaves == {{ $replicas }} )) || {
+          echo "Unexpected num_slaves label: $num_slaves; expecting {{ $replicas }}"
+          exit 1
+      }
+
+---
+#
+# Tests that the replica pods have a correct master label
+#
+{{- if (gt (int .Values.server.count) 1) }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.name.podname }}-test-master-labels
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  {{- if .Values.rbacEnabled }}
+  serviceAccountName: {{ template "crdb-redisio.fullname" . }}
+  {{- end }}
+  restartPolicy: Never
+  containers:
+  - name: test-master-label
+    {{- include "crdb-redisio.admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      master_pod=$(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=master -ojsonpath="{.items[0].metadata.name}")
+      [[ -n $master_pod ]] || {
+          echo "Master pod not found"
+          exit 1
+      }
+      master_svc_ip=$(kubectl get svc $master_pod --no-headers -ojsonpath="{.spec.clusterIP}")
+      [[ -n $master_svc_ip ]] || {
+          echo "Master svc not found"
+          exit 1
+      }
+      for slave_label in $(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=slave -ojsonpath="{.items[*].metadata.labels['redisio_master']}"); do
+          [[ $slave_label == $master_svc_ip ]] || {
+              echo "Incorrect master label found: $slave_label; expecting $master_svc_ip"
+              exit 1
+          }
+      done
+  {{- end }}

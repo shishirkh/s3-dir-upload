@@ -1,0 +1,185 @@
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ consulAgentDnsIpInt:  
+ consulAgentDnsPortInt: 8600 
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+ metadata_max_release: "19.5"
+ metadata_min_release: "0.5"
+ vnftype: zts
+ vnfname: zts1
+ vnfctype: "SS"
+ jobhookenable: true
+ jobtimeout: 900
+ prebackup: 0
+ postbackup: 0
+ prerestore: 0
+ postrestore: 0
+#set for false to use emptyDir 
+ persistentVolume:
+  enabled: true
+#registry: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+#registry1: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+#registry2: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+
+vaultagent:
+  image:
+    vagent:
+      dockerTag: 1.5.18
+      pullPolicy: Always
+
+csdc:
+  enabled: false
+
+#node anti-affinity rules
+nodeAntiAffinity: hard
+vaultagent:
+  resources:
+    requests:
+     cpu: 20m
+     memory: 16Mi
+    limits:
+     cpu: 2000m
+     memory: 4096Mi
+  fluentbit:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 2048Mi
+        cpu: 500m
+
+  envoysidecar:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+
+  consulagent:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 512Mi
+        cpu: 250m
+
+  registration:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+
+crdb-redisio:
+  server:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  sentinel:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  rolemon:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  admin:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+  cbur:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+  initcontainer:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+cskm:
+  initBusyBoxContainer:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+  cbur:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+cmdb:
+  mariadb:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 4096Mi
+        cpu: 5000m
+  admin:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 4096Mi
+        cpu: 5000m
+  cbur:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m

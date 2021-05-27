@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "eventdb.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+{{ if .Files.Get "config/logback.xml" }}
+  logback.xml: |
+{{ .Files.Get "config/logback.xml" | printf "%s" | indent 4 }}
+{{ end }}
+{{ if .Files.Get "config/jvm.options" }}
+  jvm.options: |
+{{ .Files.Get "config/jvm.options" | printf "%s" | indent 4 }}
+{{ end }}
+{{ if .Files.Get "config/cassandra.yaml" }}
+  cassandra.yaml: |
+{{ .Files.Get "config/cassandra.yaml" | printf "%s" | indent 4 }}
+{{ end }}
+{{ if .Files.Get "config/cassandra-env.sh" }}
+  cassandra-env.sh: |
+{{ .Files.Get "config/cassandra-env.sh" | printf "%s" | indent 4 }}
+{{ end }}
+  env: |
+{{ if .Files.Get "config/env" }}
+{{ .Files.Get "config/env" | printf "%s" | indent 4 }}
+{{ end }}
+{{- if .Values.istio }}
+{{- if .Values.istio.enabled }}
+    LISTEN_ADDRESS={{ default "127.0.0.1" .Values.config.listen_address }}
+{{- else }}
+    LISTEN_ADDRESS={{ default "" .Values.config.listen_address }}
+{{ end }}
+{{- else }}
+    LISTEN_ADDRESS={{ default "" .Values.config.listen_address }}
+{{ end }}
+    SS_CASSANDRA_NET={{ default "" .Values.config.network }}

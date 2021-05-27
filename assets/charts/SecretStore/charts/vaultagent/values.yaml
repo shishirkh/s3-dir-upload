@@ -1,0 +1,145 @@
+# Default values for vaultagent.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global:
+ imageRegistry: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ #consulAgentDnsIpInt: 10.254.188.254
+ #consulAgentDnsPortInt: 8600
+ casecret: zts1ztssecret
+ consul:
+   dockerTag: 1.5.18
+   pullPolicy: Always
+ clustername: "zts1"
+ datacenter: "dc1"
+ metadata_max_release: 19.5
+ metadata_min_release: 0.1
+ vnfname: zts1 
+ vnftype: ZTS
+ vnfctype: SS
+ counteralarmtracelevel: "error"
+ 
+################################
+countersenv:
+  channelbuffsize: 1000
+
+#node anti-affinity rules
+nodeAntiAffinity: hard
+
+replicaCount: 2
+
+image:
+  vagent:
+   image: vagent
+   dockerTag: 1.5.18
+   pullPolicy: Always
+  envoy:
+   pullPolicy: Always
+  alpine:
+   image: alpine-curl
+   dockerTag: 1.5.18
+   pullPolicy: Always
+  fluentbitimage:
+   pullPolicy: Always
+  consul:
+   pullPolicy: Always
+  consulregistration:
+   pullPolicy: Always
+
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerProtocol: TCP
+
+cskm:
+  enabled: true
+nameOverride: ""
+fullnameOverride: ""
+
+consulmetadata:
+  name: cmserver
+  labels:
+    app: cmserverapp
+
+consulserver:
+   servicename: sdservice
+
+containers:
+   consulagentName: consulagent-container
+
+consulagentenv:
+   servicedomainName: "svc.cluster.local"
+   domainName: "default.svc.cluster.local"
+   agentbindip: "0.0.0.0"
+
+
+service:
+  type: ClusterIP
+  port: 8202
+
+ingress:
+  enabled: false
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  path: /
+  hosts:
+    - chart-example.local
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: 
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+   requests:
+    cpu: 10m
+    memory: 16Mi
+   limits:
+    cpu: 2000m
+    memory: 4096Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+

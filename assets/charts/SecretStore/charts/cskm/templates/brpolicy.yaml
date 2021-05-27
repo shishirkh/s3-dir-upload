@@ -1,0 +1,42 @@
+{{- if  .Values.cbur.enabled }}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: {{  .Values.name.podname }}
+  labels:
+    app: {{  .Values.name.podname }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: {{  .Values.name.podname }}
+  k8sobjects:
+  - object-type: [secrets]
+    match-criteria: name
+    label-key:
+    match-string: secretstore-cskm-vault.tls
+  - object-type: [secrets]
+    match-criteria: name
+    label-key:
+    match-string: secretstore-cskm-secret
+  - object-type: [configmaps]
+    match-criteria: name
+    label-key:
+    match-string: secretstore-cskm-vault-config
+  volumes:
+  - backup  
+  backend:
+    mode: "{{ .Values.cbur.backendMode }}"
+  cronSpec: "{{ .Values.cbur.cronSpec }}"
+  k8sType: statefulset
+  brOption: {{ .Values.cbur.brOption }}
+  maxiCopy: {{ .Values.cbur.maxCopy }}
+  hooks:
+  - name: {{  .Values.name.podname }}
+    commands:
+      preBackupCmd: ["sh", "-c", "/usr/bin/backup.sh --backup --file /cskm/backup/cskm-$(date +%Y%m%d_%H%M%S)-backup.tgz"]
+      postBackupCmd: ["sh", "-c", "echo post-backup"]
+      preRestoreCmd: ["sh", "-c", "rm -rf /cskm/backup/*"]
+      postRestoreCmd: ["sh", "-c", "/usr/bin/backup.sh --restore"]
+{{- end }} #cbur.enabled

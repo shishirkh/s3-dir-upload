@@ -1,0 +1,59 @@
+---
+#
+# Tests that the persisted redis.conf has expected contents
+# - on Slaves, contains replicaof directive
+# - on Master, does not contain replicaof directive
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.name.podname }}-test-redisio-saved-config
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  restartPolicy: Never
+  containers:
+  - name: test-slaves
+    {{- include "crdb-redisio.admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      typeset -i rc=0
+      for n in $(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=slave -o custom-columns=:metadata.name); do
+        kubectl exec $n -c server -- grep -qs replicaof /redisdb/conf/server.conf || {
+          echo "Missing replicaof directive in slave $n:/redisdb/conf/server.conf"
+          ((rc++))
+        }
+      done
+      exit $rc
+  - name: test-master
+    {{- include "crdb-redisio.admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      typeset -i rc=0
+      for n in $(kubectl get pod --no-headers -lapp={{ .Values.name.podname }},redisio_role=master -o custom-columns=:metadata.name); do
+        kubectl exec $n -c server -- grep -qs replicaof /redisdb/conf/server.conf && {
+          echo "Unexpected replicaof directive in master $n:/redisdb/conf/server.conf"
+          ((rc++))
+        }
+      done
+      exit $rc

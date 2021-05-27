@@ -1,0 +1,154 @@
+# Default values for cmserver.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ counteralarmtracelevel: "error"
+ consulAgentDnsIpInt:
+ consulAgentDnsPortInt: 8600
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: zts
+ vnfname: zts1
+ vnfctype: DS
+#set for false to use emptyDir
+ persistentVolume:
+  enabled: true
+ dsadminUser:
+  enabled: false
+countersenv:
+  counteralarmtracelevel: 1000
+image:
+  dscli:
+    dockerTag: 1.5.8
+    pullPolicy: Always
+  dsreader:
+    dockerTag: 1.5.8
+    pullPolicy: Always
+  dsserver:
+    dockerTag: 1.5.8
+    pullPolicy: Always
+  envoy:
+   dockerTag: 1.5.8
+   pullPolicy: Always
+
+  fluentbit:
+   dockerTag: 1.5.8
+   pullPolicy: Always
+  consul:
+   dockerTag: 1.5.8
+   pullPolicy: Always
+  consulregistration:
+   dockerTag: 1.5.8
+   pullPolicy: Always
+  cbura:
+   dockerTag: 1.5.8
+   pullPolicy: Always
+
+
+pvcStorage:
+
+  dsserverpvc: 5Gi
+
+servicename:
+  dsserver: "dsserver-service"
+  dsreader: "dsreader-service"
+  dscli: "dscli-service"
+
+consulmetadata:
+  name: dsserver
+  labels:
+    app: dsserverapp
+
+consulserver:
+ servicename: sdservice
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+dsserver:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+dsreader:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+dscli:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 1024Mi
+      cpu: 1000m
+
+
+cburasidecar:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 8192Mi
+      cpu: 1000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m

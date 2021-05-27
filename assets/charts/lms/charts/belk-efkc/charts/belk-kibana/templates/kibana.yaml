@@ -1,0 +1,193 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  {{- if .Values.service.name }}
+  name: {{ .Values.service.name }}
+  {{- else }}
+  name: {{ template "fullname" . }}
+  {{- end }}
+  labels:
+    name: {{ template "fullname" . }}
+    component: elasticsearch
+    role: gui
+    release: {{ .Release.Name | quote }}
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: "Kibana"
+    addonmanager.kubernetes.io/mode: Reconcile
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    component: elasticsearch
+    role: gui
+    release: {{ .Release.Name | quote }}
+  ports:
+    - name: ui
+      port: {{.Values.kibana.port}}
+      protocol: TCP
+      {{- if (and (eq .Values.service.type "NodePort") (not (empty .Values.kibana.node_port))) }}
+      nodePort: {{.Values.kibana.node_port}}
+      {{- end }}
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ template "fullname" . }}
+  labels:
+    component: elasticsearch
+    role: gui
+    release: {{ .Release.Name | quote }}
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+spec:
+  replicas: {{.Values.kibana.replicas}}
+  selector:
+    matchLabels:
+      component: elasticsearch
+      role: gui
+      release: {{ .Release.Name | quote }}
+  template:
+    metadata:
+      labels:
+        name: {{ template "fullname" . }}
+        component: elasticsearch
+        role: gui
+        release: {{ .Release.Name | quote }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/kibana-secret.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/kibana-configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+       fsGroup: 1000
+       runAsNonRoot: true
+       runAsUser: 1000
+      {{- if .Values.kibana.affinity }}
+      affinity:
+{{ toYaml .Values.kibana.affinity | indent 8 }}
+      {{- end }}
+      {{- if .Values.kibana.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.kibana.nodeSelector | indent 8 }}
+      {{- end }}
+      {{- if .Values.kibana.tolerations }}
+      tolerations:
+{{ toYaml .Values.kibana.tolerations | indent 8 }}
+      {{- end }}
+      containers:
+      - name: {{ template "fullname" . }}
+        {{- if .Values.searchguard.enable }}
+        image: {{ .Values.global.registry }}/{{.Values.searchguard.image.repo}}:{{.Values.searchguard.image.tag}}
+        {{- else }}
+        image: {{ .Values.global.registry }}/{{.Values.kibana.image.repo}}:{{.Values.kibana.image.tag}}
+        {{- end }} 
+        imagePullPolicy: {{.Values.kibana.ImagePullPolicy}}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+             drop:
+               - all
+        resources:
+{{ toYaml .Values.kibana.resources | indent 10 }}
+        livenessProbe:
+          httpGet:
+            port: {{.Values.kibana.port}}
+            path: /api/status
+            {{- if .Values.searchguard.enable }}
+            scheme: HTTPS
+            {{- end }}
+          initialDelaySeconds: {{.Values.kibana.initialDelaySeconds }}
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: {{ .Values.kibana.port }}
+            {{- if .Values.searchguard.enable }}
+            scheme: HTTPS
+            {{- end }}
+          initialDelaySeconds: {{ .Values.kibana.initialDelaySeconds }}
+        env:
+          ##Setting server.host to pod hostname instead of IP as kibana has issue with IPv6 addresses.
+          - name: SERVER_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          {{- if .Values.searchguard.enable }}
+          - name: "ELASTICSEARCH_USERNAME"
+            valueFrom:
+              secretKeyRef:
+                name: {{ template "fullname" . }}
+                key: kibana_es_username
+          - name: "ELASTICSEARCH_PASSWORD"
+            valueFrom:
+              secretKeyRef:
+                name: {{ template "fullname" . }}
+                key: kibana_es_password
+          - name: "ELASTICSEARCH_SSL_VERIFICATIONMODE"
+            value: {{.Values.searchguard.kibana.es_ssl_verification_mode}}
+          - name: "ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES"
+            value: "/etc/kibana/certs/root-ca.pem"
+          {{- end }}
+          {{- if .Values.kibana.env}}
+{{ toYaml .Values.kibana.env | indent 10 }}
+          {{- end }}
+        {{- if ne .Values.kibanabaseurl.url "/" }}
+          - name: "SERVER_BASEPATH"
+            value: "{{.Values.kibanabaseurl.url}}"
+          - name: "SERVER_DEFAULROUTE"
+            value: "{{.Values.kibanabaseurl.url}}"
+        {{- end }}
+        ports:
+        - containerPort: {{.Values.kibana.port}}
+          name: ui
+          protocol: TCP
+        volumeMounts:
+        - name: kibana-config
+          mountPath: "/usr/share/kibana/config"
+          readOnly: true
+        {{- if .Values.searchguard.enable }}
+        - name: ssl
+          mountPath: "/etc/kibana/certs/"
+          readOnly: true
+        {{- end}}
+        {{- if and .Values.sane .Values.searchguard.keycloak_auth}}
+        - name: csan-keycloak
+          mountPath: "/etc/kibana/csan/"
+          readOnly: true
+        {{- end}}
+      volumes:
+      - name: kibana-config
+        configMap:
+          name: {{ template "fullname" . }}
+          items:
+          - key: kibana.yml
+            path: kibana.yml
+      {{- if .Values.searchguard.enable }}
+      - name: ssl
+        secret:
+          secretName: {{ template "fullname" . }}
+          items:
+          - key: root-ca.pem
+            path: root-ca.pem
+          - key: kibana.crt.pem
+            path: kibana.crt.pem
+          - key: kibana.key.pem
+            path: kibana.key.pem
+          {{- if .Values.searchguard.keycloak_auth }}
+          - key: keycloak-root-ca.pem
+            path: keycloak-root-ca.pem
+          {{- end }}
+          {{- if .Values.kibana.volume }}
+{{ toYaml .Values.kibana.sslsecretvolume | indent 10 }}
+          {{- end }} 
+      {{- end }}
+      {{- if and .Values.sane .Values.searchguard.keycloak_auth}}
+      - name: csan-keycloak
+        secret:
+          secretName: csan-{{ template "fullname" . }}
+      {{- end}}
+  
+

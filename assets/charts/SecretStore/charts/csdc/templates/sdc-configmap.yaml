@@ -1,0 +1,38 @@
+{{- if not .Values.service.tls -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "compaas-sdc-server-configmap"
+  namespace: {{ .Release.Namespace }}
+data:
+   config : |-
+     ETCDCTL_ENDPOINT="http://{{ .Values.name.podname }}.{{ .Release.Namespace }}:{{ .Values.service.ClientPort }}"
+     SYSTEM_NAME="{{ .Release.Namespace }}"
+     NODE_NAME="etcd-node"
+{{- end -}}     
+
+
+
+{{- if .Values.service.tls -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "compaas-sdc-server-configmap"
+  namespace: {{ .Release.Namespace }}
+data:
+   config : |-
+     ETCDCTL_ENDPOINT="https://{{ .Values.name.podname }}.{{ .Release.Namespace }}:{{ .Values.service.ClientPort }}"
+     SYSTEM_NAME="{{ .Release.Namespace }}"
+     NODE_NAME="etcd-node"
+     ETCDCTL_CA_FILE="/etc/tls/ca-cert/..data/ca.pem"
+     ETCDCTL_CERT_FILE="/etc/tls/client-cert/..data/client.pem"
+     ETCDCTL_KEY_FILE="/etc/tls/client-cert/..data/client-key.pem"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "sdc-ca-config"
+  namespace: {{ .Release.Namespace }}
+data:
+{{ (.Files.Glob "tls/ca-config/*").AsConfig | indent 2 }}
+{{- end -}}

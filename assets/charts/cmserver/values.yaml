@@ -1,0 +1,220 @@
+# Default values for cmserver.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ counteralarmtracelevel: "error"
+ consulAgentDnsIpInt:
+ consulAgentDnsPortInt: 8600
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ jobhookenable: true
+ jobtimeout: 900
+ prebackup: 0
+ postbackup: 0
+ prerestore: 0
+ postrestore: 0
+#  esymacip: 127.0.0.1
+#  esymacport: 8080
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: zts
+ vnfname: zts1
+ vnfctype: CM
+#set for false to use emptyDir
+ persistentVolume:
+  enabled: true
+ danmconfig:
+  ztslenvoylbdanmip1: ""
+countersenv:
+  channelbuffsize: 1000
+image:
+  cmreader:
+    dockerTag: 1.5.31
+    pullPolicy: Always
+  cmserver:
+    dockerTag: 1.5.31
+    pullPolicy: Always
+  envoy:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  fluentbit:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  consul:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  consulregistration:
+   dockerTag: 1.5.31
+   pullPolicy: Always
+  cbura:
+    repo: cbur/cbura
+    pullPolicy: IfNotPresent
+
+pvcStorage:
+  cmserverpvc: 1Gi
+  confdpvc: 1Gi
+  controllercmdatapvc: 2Gi
+
+consulmetadata:
+  name: cmserver
+  # labels:
+  #   app: cmserverapp
+
+consulserver:
+ servicename: sdservice
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+cmserverenv:
+  cmserver2Enabled: false
+
+cmreader:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+cmserver:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+  initcontainer:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 2000m
+  cbura:
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+
+cmcontroller:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+  initcontainer:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 2000m
+
+crdb-redisio:
+  server:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  sentinel:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  rolemon:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  admin:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+  cbur:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+  initcontainer:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+
+#resources and limits for sidecar containers
+#reading below resources & limits for sidecars of all the cmserver deployments.
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m

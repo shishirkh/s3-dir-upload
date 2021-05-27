@@ -1,0 +1,227 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-post-install-jobs
+  labels:
+    app: {{ .Values.name.podname }}
+    chart: {{ .Chart.Name }}
+    heritage: {{ .Release.Service }}
+    release: "{{ .Release.Name }}"
+  annotations:
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook": post-install
+    "helm.sh/hook-delete-policy": hook-succeeded, before-hook-creation
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name.podname }}--post-install-jobs
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      serviceAccountName: {{ .Values.name.podname }}-sa
+      restartPolicy: Never
+      volumes:
+      # - name: kubectl
+      #   hostPath:
+      #     path: /usr/local/bin/kubectl
+      
+      containers:
+      - name: post-install-jobs
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.kubectl.imageRepo }}:{{ .Values.image.kubectl.dockerTag }}"
+        env:
+          - name: AUTOMATE
+            value: "{{ .Values.autoInitUnseal }}"
+          - name: TLS_DISABLED
+            value: "{{ .Values.tlsDisabled }}"
+          - name: VAULT_AUDIT_STDOUT_EN
+            value: "{{ .Values.logging.auditToStdoutEnabled }}"
+          - name: VAULT_AUDIT_FILE_EN
+            value: "{{ .Values.logging.auditToFileEnabled }}"
+          - name: VAULT_METRICS_STDOUT_EN
+            value: "{{ .Values.logging.metricsToStdotEnabled }}"
+          - name: VAULT_METRICS_FILE_EN
+            value: "{{ .Values.logging.metricsToFileEnabled }}"
+          - name: POSTINSTALL_TRACE_ENABLED
+            value: "{{ .Values.postInstallTraceEnabled }}"
+        volumeMounts:
+        - name: {{ .Values.name.podname }}-user-script-volume
+          mountPath: /cskm
+        resources:
+          requests:
+            memory: {{ .Values.initBusyBoxContainer.resources.requests.memory | default "256Mi" | quote }}
+            cpu: {{ .Values.initBusyBoxContainer.resources.requests.cpu | default "250m" | quote }}
+          limits:
+            memory: {{ .Values.initBusyBoxContainer.resources.requests.memory | default "256Mi" | quote }}
+            cpu: {{ .Values.initBusyBoxContainer.resources.requests.cpu | default "250m" | quote }}
+        command:
+        - sh
+        - "-c"
+        - |
+          function post_job_exit() {
+            # Sleep in case there is a need for trouble-shooting
+            sleep {{ .Values.secondsAfterPostInstall }}
+            exit $1
+          }
+          
+          function log() {
+            d="$(date +"%F %T,%N")"
+            printf "[%s] %s\n" "$d" "$1"
+          }
+          
+          TRACE_ENABLED=$(echo "$POSTINSTALL_TRACE_ENABLED" | awk '{print tolower($0)}')
+          if [ "$TRACE_ENABLED" = "true" ];
+          then
+            set -x
+          fi
+          
+          log "Post-install job started"
+
+          if [ "${AUTOMATE}" -lt 1 ]; then
+            log "The user set to skip post-install. Exiting."
+            post_job_exit 0;
+          fi
+
+
+          # Set http or https protocol depended on parameter  
+          TLS_DIS=$(echo "$TLS_DISABLED" | awk '{print tolower($0)}')
+          protocol='https'
+          if [ "$TLS_DIS" = "true" ] || [ "$TLS_DIS" = "false" ];
+          then
+            if [ "$TLS_DIS" = "true" ];
+            then
+              protocol='http'
+            fi 
+          else
+            log "WARNING: Unknown value of TLS_DISABLED: $TLS_DISABLED. Set protocol to HTTPS"
+          fi
+          
+          log "Selected vault protocol: ${protocol}"
+          
+          # Wait till first CSKM pod started
+          for i in {1..500}; do
+            log "Checking if cskm pod started. Attempt ${i}."
+            tmp=`kubectl get pods --namespace {{ .Release.Namespace }} -o wide | grep {{ .Values.name.podname }}-0 | tr -s [:space:] | cut -f6 -d' '`
+            IFS=', ' read -r -a array <<< "${tmp}"
+            arr_size=${#array[@]}
+            if [ "$arr_size" -gt 0 ];
+            then
+              if [ "${array[0]}" != "<none>" ]; then
+                pod_ip=${array[0]}
+                log "Pod is found. Ip: $pod_ip"
+                break
+              fi
+            fi
+            sleep 10
+          done
+          
+          if [ -z "$pod_ip" ]; then
+            log "CSKM pod is not available. Exiting."
+            post_job_exit -1
+          fi
+
+          
+          # Check vault is already initialized
+          for i in {1..500}; do
+            log "Checking if Vault is available on the pod. Attempt ${i}."
+            out="$(curl --insecure -s ${protocol}://${pod_ip}:8200/v1/sys/init)"
+            if [ ! -z "$out" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ -z "$out" ]; then
+            log "Vault is not available. Exiting."
+            post_job_exit -1
+          fi
+
+          log "Vault is available"
+
+          if [[ ! "$out" == "{\"initialized\":false}" ]]; then
+            log "Vault already initialized. Exiting."
+            post_job_exit 0
+          fi
+          
+          log "Vault is not initialized"
+
+          log "Initializing Vault..."
+          out="$(curl --insecure -s --request PUT --data '{"secret_shares": 1, "secret_threshold": 1}' ${protocol}://${pod_ip}:8200/v1/sys/init)"
+
+          encryption_key="$(echo ${out} | cut -f4 -d'"')"
+          root_token="$(echo ${out} | cut -f12 -d'"')"
+
+          log "Vault is initialized"
+          
+          log "Deleting existing Vault secret..."
+          kubectl --namespace {{ .Release.Namespace }} delete secret {{ .Values.name.podname }}-secret --ignore-not-found=true
+
+          log "Addind new vault secret"
+          kubectl --namespace {{ .Release.Namespace }} create secret generic {{ .Values.name.podname }}-secret --from-literal=unslkey="${encryption_key}" --from-literal=token="${root_token}"
+
+          sleep 5
+          
+          log "Get all pods and unseal" 
+          tmp=`kubectl get endpoints {{ .Values.name.podname }} -o jsonpath={.subsets[0].addresses[*].ip}`
+          IFS=', ' read -r -a array <<< "${tmp}"
+          for element in "${array[@]}"
+          do
+              log "Unsealing Vault on pod: ${element}" 
+              out=$(curl --insecure --request PUT --data "{\"key\":\"${encryption_key}\"}" "${protocol}://${element}:8200/v1/sys/unseal")
+          done
+          
+          # Wait for CSKM is available through service 
+          service_name="{{ .Values.name.podname }}.{{ .Release.Namespace }}.svc.cluster.local"
+          log "service_name: $service_name"
+          for i in {1..500}; do
+            log "Checking if CSKM service available. Attempt ${i}."
+            out=$(curl --connect-timeout 5 -s -i --insecure "${protocol}://${service_name}:8200/v1/sys/health" | grep HTTP)
+            if [ ! -z "${out}" ]; then
+              break
+            fi
+            sleep 10
+          done          
+          
+          if [ -z "$out" ]; then
+            log "Vault is not available through service. Exiting."
+            post_job_exit -1
+          fi
+          
+          # Enable audit log
+          
+          AUDIT_STDOUT_EN=$(echo "$VAULT_AUDIT_STDOUT_EN" | awk '{print tolower($0)}')
+          AUDIT_FILE_EN=$(echo "$VAULT_AUDIT_FILE_EN" | awk '{print tolower($0)}')
+          METRICS_STDOUT_EN=$(echo "$VAULT_METRICS_STDOUT_EN" | awk '{print tolower($0)}')
+          METRICS_FILE_EN=$(echo "$VAULT_METRICS_FILE_EN" | awk '{print tolower($0)}')
+
+          if [ "$AUDIT_STDOUT_EN" = "true" ] || [ "$AUDIT_FILE_EN" = "true" ] || [ "$METRICS_STDOUT_EN" = "true" ] || [ "$METRICS_FILE_EN" = "true" ];
+          then
+            log "Enabling Audit Log..."
+            out=$(curl --insecure --header "X-Vault-Token: ${root_token}" --request PUT --data "{\"type\": \"file\", \"options\": {\"file_path\":\"stdout\"}}" "${protocol}://${service_name}:8200/v1/sys/audit/stdout-audit")
+          fi
+
+          # Execute user script defined in values.yaml
+          
+          log "Running custom post-install code ..."
+          
+          source /cskm/userscript.sh ${service_name} ${root_token} ${protocol}
+          
+          log "Custom post-install code complete. Exiting post-install job"
+          
+          post_job_exit $?
+
+      {{ if .Values.nodeSelector }}
+      nodeSelector:
+      {{- range $key, $value := .Values.nodeSelector }}
+        {{ $key }}: "{{- $value }}"
+      {{- end }}
+      {{ end }}
+
+      volumes:
+        - name: {{ .Values.name.podname }}-user-script-volume
+          configMap:
+            name: {{ .Values.name.podname }}-user-script
+

@@ -1,0 +1,13 @@
+{{- if .Values.istio.enable }}
+apiVersion: "authentication.istio.io/v1alpha1"
+kind: "Policy"
+metadata:
+  name: {{ template "fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  targets:
+  - name: {{ template "fullname" . }}
+  peers:
+  - mtls:
+      mode: PERMISSIVE
+{{- end }}

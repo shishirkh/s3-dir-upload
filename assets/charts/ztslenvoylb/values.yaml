@@ -1,0 +1,354 @@
+# Default values for cmserver.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global:
+ ipv6interface: disable
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ counteralarmtracelevel: "error"
+ consulAgentDnsIpInt:
+ consulAgentDnsPortInt: 8600 
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts1"
+ terminationGracePeriodSeconds: 30
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+#set for false to use emptyDir 
+ persistentVolume:
+  enabled: true
+# Basically annotation for danm CNI is diffrent from BCMT version 18.XX to 19.XX.just ignore .XX value, give only first value in para "bcmtversion". so please mention BCMT version in below para ex:- 19/18
+ bcmtversion: "19"
+ danmconfig:
+  danm_edge_nw_name: danmed1
+  ztslenvoylbdanmip1: 10.96.180.100
+  ztslenvoylbdanmip2: 10.96.180.101
+  subnetmask: 26
+  danm_route: 0.0.0.0/0 
+  danm_route_gw: 10.96.180.65
+ ztsca: "enable"
+ envoydebugflag: "disable"
+# caservicename: caserverservice.default.svc.cluster.local
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnfname: ztslenvoylb
+ vnfctype: "LB"
+ vnftype: zts
+
+countersenv:
+  channelbuffsize : 1000
+  
+metadata:
+  namef: ztslenvoylbf
+  names: ztslenvoylbs
+  labels:
+    app: ztslenvoylb-label
+    appf: ztslenvoylbf-label
+    apps: ztslenvoylbs-label
+
+configmap:
+  name: configmapenvoylbcpserver
+  labels:
+    app: configmapenvoylbcpserver-label
+configmapdyn:
+  namelb1: configmapenvoylbcpserverdynlb1
+  namelb2: configmapenvoylbcpserverdynlb2
+  labels:
+    app: configmapenvoylbcpserverdyn-label
+
+envoyContainer:
+ resources:
+  requests:
+   memory: 1000Mi
+   cpu: 1500m
+
+consulContainer:
+ resources:
+  requests:
+   memory: 500Mi
+   cpu: 100m
+
+replicaCount: 1
+image:
+ envoyimage:
+   cieditTag: 1.5.19
+   pullPolicy: IfNotPresent
+ fluentbit:
+   dockerTag: 1.0.100
+   pullPolicy: IfNotPresent
+ consulregistration:
+    dockerTag: 1.1.1
+    pullPolicy: IfNotPresent
+ consul:
+    dockerTag: 1.1.1
+    pullPolicy: IfNotPresent
+ squid:
+    dTag: 1.4.0
+    pullPolicy: Always
+envoycontainers:
+  envoyName: envoylbcpserver
+
+consulmetadata:
+  name: ztslb
+  labels:
+    app: ztslbapp
+
+consulserver:
+ servicename: sdservice
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+#  domainName: "default.svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+
+certificate:
+ cnname: ztsenvoylb
+
+ztslenvoylb:
+  service:
+    name: ztslenvoylb-service
+    labels:
+      app: ztslenvoylb-service-label
+    type: NodePort
+    httpname: http
+    httpport: 8080
+    httpprotocol: TCP
+    httptargetport: 8080
+    httpnodeport: 30090
+    tcpname: tcp
+    tcpport: 2020
+    tcpprotocol: TCP
+    tcptargetport: 2020
+    tcpnodeport: 30080
+    sshname: ssh
+    sshport: 3030
+    sshprotocol: TCP
+    sshtargetport: 3031
+    sshnodeport: 30070
+
+    tcpname1: tcp1
+    tcpport1: 2021
+    tcpprotocol1: TCP
+    tcptargetport1: 2021
+    tcpnodeport1: 30081
+    sshname1: ssh1
+    sshport1: 3031
+    sshprotocol1: TCP
+    sshtargetport1: 3031
+    sshnodeport1: 30071
+
+    tcpname2: tcp2
+    tcpport2: 2022
+    tcpprotocol2: TCP
+    tcptargetport2: 2022
+    tcpnodeport2: 30082
+    sshname2: ssh2
+    sshport2: 3032
+    sshprotocol2: TCP
+    sshtargetport2: 3032
+    sshnodeport2: 30072
+
+    
+    tcpname3: tcp3
+    tcpport3: 2023
+    tcpprotocol3: TCP
+    tcptargetport3: 2023
+    tcpnodeport3: 30083
+    sshname3: ssh3
+    sshport3: 3033
+    sshprotocol3: TCP
+    sshtargetport3: 3033
+    sshnodeport3: 30073
+
+
+    tcpname4: tcp4
+    tcpport4: 2024
+    tcpprotocol4: TCP
+    tcptargetport4: 2024
+    tcpnodeport4: 30084
+    sshname4: ssh4
+    sshport4: 3034
+    sshprotocol4: TCP
+    sshtargetport4: 3034
+    sshnodeport4: 30074
+    
+
+    tcpname5: tcp5
+    tcpport5: 2025
+    tcpprotocol5: TCP
+    tcptargetport5: 2025
+    tcpnodeport5: 30085
+    sshname5: ssh5
+    sshport5: 3035
+    sshprotocol5: TCP
+    sshtargetport5: 3035
+    sshnodeport5: 30075
+
+    tcpname6: tcp6
+    tcpport6: 2026
+    tcpprotocol6: TCP
+    tcptargetport6: 2026
+    tcpnodeport6: 30086
+    sshname6: ssh6
+    sshport6: 3036
+    sshprotocol6: TCP
+    sshtargetport6: 3036
+    sshnodeport6: 30076
+
+    
+    tcpname7: tcp7
+    tcpport7: 2027
+    tcpprotocol7: TCP
+    tcptargetport7: 2027
+    tcpnodeport7: 30087
+    sshname7: ssh7
+    sshport7: 3037
+    sshprotocol7: TCP
+    sshtargetport7: 3037
+    sshnodeport7: 30077
+
+
+    tcpname8: tcp8
+    tcpport8: 2028
+    tcpprotocol8: TCP
+    tcptargetport8: 2028
+    tcpnodeport8: 30088
+    sshname8: ssh8
+    sshport8: 3038
+    sshprotocol8: TCP
+    sshtargetport8: 3038
+    sshnodeport8: 30078
+
+    externalip: 10.96.173.118
+
+
+envoyenv:
+  name: "loglevel"
+  value: "debug"
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.yaml"
+  - "--v2-config-only" 
+
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerDynPort: 8086
+  envoyContainerProtocol: TCP
+
+imagePullSecrets:
+  name: ztc-regcred
+
+ingress:
+  enabled: false
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  path: /
+  hosts:
+    - chart-example.local
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # requests:
+  #  cpu: 100m
+  #  memory: 128Mi
+
+#nodeSelector: {}
+
+#tolerations: []
+
+affinity: {}
+#Init container parameters ,which is basically used to registration pod services
+
+consulenv:
+  ztslenvoylbregid: "ztslenvoylb-service"
+  ztslenvoylbregidint: "ztslenvoylb-serviceint"
+#  serviceregistrationvalue: "sdserviceagent.default.svc.cluster.local"
+
+
+ztsenvoylbf:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 20480Mi
+      cpu: 5000m
+
+ztsenvoylbs:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 20480Mi
+      cpu: 5000m
+
+ztsenvoylbdyn:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 20480Mi
+      cpu: 5000m
+
+squid:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+init:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+consulagent:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+

@@ -1,0 +1,195 @@
+metadata:
+  name: configserver
+  labels:
+    app: configserver-label
+
+replicaCount: 2
+
+configmap:
+  name: configmapconfigserver
+  labels:
+    app: configmapconfigserver-label
+
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ counteralarmtracelevel: "error"
+ countersenv:
+  channelbuffsize: 1000
+ consulAgentDnsIpInt:
+ consulAgentDnsPortInt: 8600 
+ consulAgentDnsIp:
+ consulAgentDnsPort: 30086
+ ExternalDnsIp :
+ clustername: "zts1"
+ datacenter: "dc1"
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: ZTS
+ vnfname: zts1
+ vnfctype: ZCS
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+
+ jobhookenable: true
+ jobtimeout: 300
+ prerestore: 0
+ postrestore: 0
+ prebackup: 0
+ postbackup: 0
+
+#node anti-affinity rules
+nodeAntiAffinity: hard
+
+configservercontainer:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+
+consulagentcontainer:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registrationcontainer:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+crdb-redisio:
+  server:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  sentinel:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  rolemon:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  admin:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+  cbur:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+  initcontainer:
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+
+image:
+  configservice:
+   dockerTag: 1.5.10
+   pullPolicy: Always
+  fluentbit:
+   dockerTag: 1.5.10
+   pullPolicy: Always
+  envoy:
+   dockerTag: 1.5.10
+   pullPolicy: Always 
+  consulregistration:
+   dockerTag: 1.5.10
+   pullPolicy: IfNotPresent
+  consul:
+   dockerTag: 1.5.10
+   pullPolicy: IfNotPresent
+
+configserver:
+  service:
+    name: configserverservice
+    labels:
+      app: configserverservice-label
+    type: NodePort
+    port: 8443
+
+ExternalIP: 10.96.173.77
+
+consulmetadata:
+  name: caservice
+  labels:
+    app: caserviceapp
+
+consulserver:
+ servicename: sdservice
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+#  domainName: "default.svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerProtocol: TCP
+
+brokerargs:
+
+imagePullSecrets:
+  name: ztc-regcred
+
+consulenv:
+  configserverserviceregid: "configserverservice"
+ # serviceregistrationvalue: "sdserviceagent.default.svc.cluster.local"

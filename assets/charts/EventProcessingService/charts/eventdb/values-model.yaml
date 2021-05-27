@@ -1,0 +1,364 @@
+# values-model.yaml
+type: object
+properties:
+    istio:
+        description: Whether your chart will deploy on istio
+        type: object
+        properties:
+            enabled:
+                description: Deploy chart with istio tuning
+                type: boolean
+                default: false
+                title: Istio enabled
+    cbur:
+        description: CBUR configuration
+        type: object
+        properties:
+            enabled:
+                description: Use cbur for data backup and restore?
+                type: boolean
+                default: true
+                title: CBUR enabled
+            backendMode:
+                description: defines the backup storage options, i.e. local, NetBackup, S3, etc.
+                type: string
+                default: "local"
+                title: CBUR backend.mode
+            cronSpec:
+                description: Cronjob schedule for backups
+                type: string
+                default: "0 0 * * *"
+                title: CBUR cronSpec
+            brOption:
+                description:  defines backup behavior for statefulsets
+                type: integer
+                default: 2
+                title: CBUR brOption
+            maxiCopy:
+                description: defines how many backup copies should be saved
+                type: integer
+                default: 5
+                title: CBUR maxiCopy
+    metrics:
+        description: METRICS configuration
+        type: object
+        properties:
+            enabled:
+                description: Get metrics into CPRO and GRAFANA
+                type: boolean
+                default: false
+                title: METRICS enabled
+            annotate_service:
+                description: Annotate cassandra service for metrics scraping (port 9500)
+                type: boolean
+                default: false
+                title: Annotate service
+    rbac:
+        description: RBAC configuration
+        type: object
+        properties:
+            enabled:
+                description: Does the cluster have rbac enabled?
+                type: boolean
+                default: true
+                title: RBAC Enabled
+            create:
+                description: Should an RBAC role be created?
+                type: boolean
+                default: false
+                title: Create RBAC Role
+    image:
+        description: Apache Cassandra docker image
+        type: object
+        properties:
+            registry:
+                description: Apache Cassandra docker image registry
+                type: string
+                default: csf-docker-delivered.repo.lab.pl.alcatel-lucent.com
+            repository:
+                description: Apache Cassandra docker image repo/name
+                type: string
+                default: ccas_apache
+            csfTag:
+                description: Apache Cassandra image tag
+                type: string
+                default: 3.11.4.379
+    NumOf_Replicas:
+        description: |
+            Number of Replicas.
+        type: integer
+        default: 3
+        title: Number of Replicas
+
+    lcm:
+        description: |
+            Lifecycle parameters
+        type: object
+        properties:
+            heal_recovery_tag:
+                description: |
+                    Tag to use to initiate a Heal event.  Any change of this tag will result in a heal.
+                type: string
+                default: none
+                title: Heal Recovery Tag
+                pattern: '^([0-9]*[a-z]*[A-Z]*)$'
+    resources:
+        description: |
+            Resources required to request new instance
+        type: object
+        properties:
+            persistence:
+                description: |
+                    Size of persistent volume reserved for a service.
+                type: string
+                default: 10Gi
+            backup_volume_enabled:
+                description: |
+                    Use/create a separate persistent volume for backups
+                type: boolean
+                default: true
+                title: Enable backup volume
+            persistenceBackup:
+                description: |
+                    Size of persistent volume reserved for data backup.
+                type: string
+                default: 10Gi
+            memory:
+                description: |
+                     Memory size reserved for a service.
+                type: string
+                default: 8Gi
+            cpu:
+               description: |
+                    CPU resources reserved for a service.
+               type: string
+               default: 2
+            java_newsize:
+                title: Java heap young generation size
+                description: |
+                     Size of Java young generation, usually 100m * number of CPU cores.
+                type: string
+                default: 512m
+                pattern: "^[0-9]+(E|P|T|G|M|K|e|p|t|g|m|k)$"
+            java_heapsize:
+                title: Java heap size
+                description: |
+                     Size of Java heap.
+                type: string
+                default: 2g
+                pattern: "^[0-9]+(E|P|T|G|M|K|e|p|t|g|m|k)$"
+
+    config:
+        description: |
+            Model of configuration required to request new instance
+        type: object
+        properties:
+            cluster_name:
+               description: |
+                    Name of the cassandra cluster
+               type: string
+               default: MyCluster
+            cluster_datacenter:
+               description: |
+                    Name of the cassandra center
+               type: string
+               default: MyCenter
+            user:
+               description: |
+                    Name of the cassandra admin super user
+               type: string
+               title: Cassandra Super User
+               default: suadmincass
+               minLength: 3
+               maxLength: 20
+               pattern: '^[a-z0-9_-]{3,20}$'
+            passwd:
+               description: |
+                    base64 encoding of Cassandra admin password
+                    use below command to get base64 encoding of password
+                    echo -n <string in double quotes> | base64
+               type: string
+               title: Cassandra Super User Password
+               format: password
+            antiAffinity:
+               description: |
+                   Anti affinity parameter. If set to hard, each Zookeeper server will be scheduled on different worker node.
+               type: string
+               default: "hard"
+               pattern: '^(hard|soft)$'
+            use_minconfig:
+               description: |
+                    Use Cassandra Min configuration parameters
+               type: boolean
+               default: false
+               title: Use MinConfig
+            RPC_SERVER_TYPE:
+               description: |
+                    RPC server type
+               type: string
+               default: hsha
+            CONCURRENT_READS:
+                description: |
+                    Number of concurrent reads
+                type: integer
+                default: 4
+            CONCURRENT_WRITES:
+                description: |
+                    Number of concurrent writes
+                type: integer
+                default: 4
+            COMPACTION_THROUGHPUT:
+                description: |
+                    Compaction throughput
+                type: integer
+                default: 0
+            CONCURRENT_COMPACTORS:
+                description: |
+                    Number of concurrent compactors
+                type: integer
+                default: 1
+            RPC_MIN_THREADS:
+                description: |
+                    RPC min number of threads
+                type: integer
+                default: 4
+            RPC_MAX_THREADS:
+                description: |
+                    RPC maximum number of threads
+                type: integer
+                default: 4
+            KEY_CACHE_SIZE:
+                description: |
+                    Cache size
+                type: integer
+                default: 32
+            remove_pvc:
+               description: |
+                    When deleting a release, remove its PVCs
+               type: boolean
+               default: true
+               title: Auto Remove PVC
+            remove_secret:
+               description: |
+                    When deleting a release, remove its secrets
+               type: boolean
+               default: true
+               title: Auto Remove secrets
+            listen_address:
+               description: |
+                    Set to 127.0.0.1 when istio enabled in namespace
+               type: string               
+               title: Cassandra listen address
+            seed_count:
+               description: |
+                    Number of seeds.
+               type: integer
+               default: 1
+            seeds:
+               description: |
+                    Cassandra seed nodes
+               type: string
+            cluster_domain:
+               description: |
+                    Kubernetes cluster domain
+               type: string
+               default: cluster.local
+            hostNetwork:
+               description: |
+                    Use host network for Cassandra pod IP
+               type: string
+               default: false
+    livenessProbe:
+        description: |
+            LivenessProbe configuration.
+            ref:https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+        type: object
+        properties:
+            commandOverrides:
+                title: LivenessProbe command override
+                description: |
+                    Use nodetool status as liveness probe
+                type: boolean
+                default: false
+            initialDelaySeconds:
+                title: Initial Delay In Seconds
+                description: |
+                    initial Delay In Seconds
+                type: integer
+                default: 100
+                minimum: 100
+            periodSeconds:
+                title: Period in seconds
+                description: |
+                     Period in seconds
+                type: integer
+                default: 30
+                minimum: 5
+            timeoutSeconds:
+                title: Timeout in seconds
+                description: |
+                     Timeout in seconds
+                type: integer
+                default: 3
+                minimum: 3
+            successThreshold:
+                title: Succes Threshold
+                description: |
+                    Success Threshold
+                type: integer
+                default: 1
+                minimum: 1
+            failureThreshold:
+                title: Failure Threshold
+                description: |
+                    Failure Threshold
+                type: integer
+                default: 3
+                minimum: 3
+    readinessProbe:
+        description: |
+            readinessProbe configuration.
+            ref:https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+        type: object
+        properties:
+            commandOverrides:
+                title: ReadinessProbe command override
+                description: |
+                    Use nodetool status as readiness probe
+                type: boolean
+                default: false
+            initialDelaySeconds:
+                title: Initial Delay In Seconds
+                description: |
+                    initial Delay In Seconds
+                type: integer
+                default: 100
+                minimum: 100
+            periodSeconds:
+                title: Period in seconds
+                description: |
+                     Period in seconds
+                type: integer
+                default: 30
+                minimum: 5
+            timeoutSeconds:
+                title: Timeout in seconds
+                description: |
+                     Timeout in seconds
+                type: integer
+                default: 3
+                minimum: 3
+            successThreshold:
+                title: Succes Threshold
+                description: |
+                    Success Threshold
+                type: integer
+                default: 1
+                minimum: 1
+            failureThreshold:
+                title: Failure Threshold
+                description: |
+                    Failure Threshold
+                type: integer
+                default: 3
+                minimum: 3

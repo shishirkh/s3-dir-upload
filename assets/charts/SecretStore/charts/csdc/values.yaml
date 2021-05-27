@@ -1,0 +1,61 @@
+global:
+  imageRegistry: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+##
+## Service definitions
+##
+name:
+ podname: secretstore-csdc
+service:
+  PeerPort: 2380
+  ClientPort: 2379
+  Component: "etcd"
+  Replicas: 3
+  Image: "um/etcdv3"
+  ImageTag: "v3.3.11"
+  ImagePullPolicy: "IfNotPresent"
+  kubernetesImage: "um/kubectl"
+  kubernetesTag: "v1.10.3"
+  resources:
+    requests:
+      Memory: 512Mi
+      Cpu: 200m
+    #limits:
+    #  Memory: 64Gi
+    #  Cpu: 32
+  Storage: "2Gi"
+  StorageClass: ""
+  tls: true
+  user_defined_tls: false
+  user_defined_ca: ""
+  user_defined_client_cert: ""
+  user_defined_client_key: ""
+  user_defined_server_cert: ""
+  user_defined_server_key: ""
+  preserve_pvc: false
+  snapshotCount: "100000"
+  heartbeatInterval: "100"
+  electionTimeout: "1000"
+  autoCompactionRetention: "1"
+  RBAC: false
+  ramdiskWal: false
+  ramdiskAll: false
+  DialTimeoutforclient: "9s"
+  terminationGracePeriodSeconds: 60
+  nodeSelector: {}
+ingress:
+  enabled: true
+  #host:
+  ## If true, sso through keycloak will be enabled
+  sso: false
+  annotations:
+     csdc.ingress.kubernetes.io/rewrite-target: "/"
+     csdc.ingress.kubernetes.io/ssl-redirect: "false"
+  path: /v3alpha/
+cbur:
+  enabled: true
+  ## defines the backup storage options, i.e. local, NetBackup, S3, Avamar.
+  backendMode: "local"
+  ## allows user to schedule backups
+  cronSpec: "*/5 * * * *"
+  ## defines how many backup copies should be saved
+  maxiCopy: 5

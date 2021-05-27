@@ -1,0 +1,22 @@
+apiVersion: v1
+appVersion: eventdb-1.2.20 ccas-apache-2.1.6_cassandra-3.11.4
+description: This chart is to deploy ZT VNF Extension eventdb pods in EventProcessingService,
+  Apache Cassandra is a free and open-source distributed database management system
+  designed to handle large amounts of data across many commodity servers, providing
+  high availability with no single point of failure.
+engine: gotpl
+home: https://confluence.app.alcatel-lucent.com/display/plateng/CCAS+-+Apache+Cassandra+Guide
+icon: https://upload.wikimedia.org/wikipedia/commons/5/5e/Cassandra_logo.svg
+keywords:
+- eventdb
+- cassandra
+- apache
+- database
+- nosql
+- 'X-COMPAAS: { "CATEGORY": "Databases", "SVC_NAME": "Cassandra", "SVC_TYPE": "CCAS",
+  "SVC_SCOPE": [ "PRIVATE" ] }'
+maintainers:
+- email: csf-osdb-domains@list.nokia.com
+  name: Nokia (ZTS & CSF CCAS Team)
+name: eventdb
+version: 1.2.20

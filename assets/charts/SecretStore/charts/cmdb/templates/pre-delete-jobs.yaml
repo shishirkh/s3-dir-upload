@@ -1,0 +1,48 @@
+{{- if not (eq (default "enable" .Values.hooks.preDeleteJob) "disable") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-pre-delete
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.hooks.deletePolicy | quote }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "cmdb-admin.labels" . | indent 8 }}
+        type: admin
+    spec:
+      {{- if and (.Values.rbac_enabled) (eq (.Values.cluster_type) "simplex") }}
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: pre-delete-admin
+        {{- include "cmdb-admin.image" . | indent 8 }}
+        args: [ "delete" ]
+        env:
+        - name: CLUSTER_TYPE
+          value: "{{ .Values.cluster_type }}"
+        - name: CLUSTER_NAME
+          value: "{{ .Values.cluster_name | default .Release.Name | trunc 32 }}"
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: HOOK_TYPE
+          value: "pre"
+        {{- if gt (int .Values.admin.preDeleteTimeout) 0 }}
+        - name: HOOK_TIMEOUT
+          value: "{{ .Values.admin.preDeleteTimeout }}"
+        {{- end }}
+        {{- include "cmdb-admin.service" . | indent 8 }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+{{- end }}

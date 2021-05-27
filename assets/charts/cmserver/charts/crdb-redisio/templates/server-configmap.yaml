@@ -1,0 +1,37 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-server-config
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+data:
+  server.initial.conf: |
+    #
+    # Redis server default CRDB-redisio configuration file for
+    # K8s/Helm based containerized deployment
+    #
+    daemonize no
+    {{- if .Values.server.tmpfsWorkingDir }}
+    # Using tmpfs-backed database
+    dir /redisdb-tmpfs
+    {{- else }}
+    dir /redisdb
+    {{- end }}
+  server.chart.conf: |
+    #
+    # Redis server configuration include file
+    #
+    # This conf file is included at the beginning of the runtime server.conf
+    # file.  Dynamic changes done to the configuration via Redis CONFIG SET
+    # (w/ CONFIG REWRITE) will persist in the runtime server.conf file.
+    # Such dynamic changes that conflict with parameters specified here will
+    # overwrite the values specified here.
+    #
+    # Special care must be taken with multi-line parameters which don't overwrite
+    # previously seen parameters such as save, include, etc.  Conflicting
+    # parameters such as these will not overwrite the values here but rather
+    # add to them.
+    {{- if and .Values.server .Values.server.confInclude }}
+{{ .Values.server.confInclude | indent 4 }}
+    {{- end }}

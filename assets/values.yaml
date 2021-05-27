@@ -1,0 +1,98 @@
+# Default values for ztsl.
+
+#global values for all charts 
+global:
+ # value of ipv6interface should be 'enable' when zts external interface is ipv6
+ ipv6interface: disable
+ imageRegistry: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ terminationGracePeriodSeconds: 30
+ consulAgentDnsIp: <Enter the Control node IP>
+ consulAgentDnsPort: 30086
+ ExternalDnsIp : <Enter the DNS server IP>
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ #EPS Esymac Agent
+ esymacip: 127.0.0.1
+ esymacport: 8080
+ vnfname: zts1
+ vnftype: ZTS
+ metadata_max_release: "20"
+ metadata_min_release: "2.0"
+ DestinationType:
+  splunk: true
+  sftp: true
+ jobhookenable: true
+ jobtimeout: 900
+ prebackup: 0
+ postbackup: 0
+ prerestore: 0
+ postrestore: 0
+ lms_service_enabled: false
+
+
+
+# Basically annotation for danm CNI is different from BCMT version 18.XX to 19.XX.just ignore .XX value, give only first value in para "bcmtversion". so please mention BCMT version in below para ex:- 19/18
+ bcmtversion: "19"
+
+ danmconfig:
+  # DANM network name created on your k8s cluster ex : danm1
+  danm_edge_nw_name: danmed1
+  # DANM IP to be assigned for external access  ex : 10.10.11.120
+  ztslenvoylbdanmip1: <Enter the unused DANM IP from danm pool>
+  ztslenvoylbdanmip2: <Enter the unused DANM IP from danm pool>
+  # Subnet-ex-26  
+  subnetmask: <Enter the subnet mask>
+  # Route for DANM IP configuration ex : "0.0.0.0/0"
+  danm_route: "0.0.0.0/0"
+  # GW for DANM IP route ex : 10.10.11.254
+  danm_route_gw: <Enter the danm subnet gateway>
+
+#Configuration Management service
+cmserver:
+ enabled: true #set to false to disable this service during installation
+ cmserverenv:
+  cmserver2Enabled: false
+
+
+
+config:
+  enabled: true
+
+trackerservice:
+ enabled: true  #set to false to disable this service during installation
+
+clustermonitorservice:
+ enabled: true  #set to false to disable this service during installation
+ 
+MetadataStoreService:
+ enabled: true  #set to false to disable this service during installation
+
+#EventProcessingService
+EventProcessingService:
+ enabled: true  #set to false to disable this service during installation
+
+IntegrationService:
+ enabled: true
+
+#EnvoyLB
+ztslenvoylb:
+ enabled: true  #set to false to disable this service during installation
+
+LogProcessingService:
+ enabled: true  #set to false to disable this service during installation
+
+
+#tags:
+#  splunk: true
+#  sftp: true
+
+#SecretStore
+SecretStore:
+ enabled: true
+
+#datasync
+datasync:
+ enabled: true

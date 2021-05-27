@@ -1,0 +1,502 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmap.name }}
+  labels:
+    app: {{ .Values.configmap.labels.app }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/var/DebugTrace/EnvoySideCar/envoyaccess.log"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+          protocol: TCP
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+      - name: sftpapp
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8123
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: sftpapp
+              cluster: daserver
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/sftpdaservice.log"
+      - name: app
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8888
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match: ################################ configservice ##############################
+                      prefix: "/nokia.ztsl.config.v1.Config/" #need to modify
+                    route:
+                      cluster: configservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ################################ metadatastore ##############################
+                      prefix: "/nokia.ztsl.MetaDataStore.v1.MetaDataStore/" #need to modify
+                    route:
+                      cluster: metadataservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ######################### logreciever ########################################
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ##################### efsmonitor ########################################
+                      prefix: "/esymacscale.VNFDiscoveryService/"
+                    route:
+                      cluster: efsmonitor
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ##################### integrationnetact ########################################
+                      prefix: "/ntcapp/"
+                    route:
+                      cluster: integrationnetact
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyegressintg.log"
+              generate_request_id: true
+      - name: eventapp
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 6061
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match: ######################### logreciever ########################################
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService/RaiseEvent"
+                    route:
+                      cluster: eventreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyeventreciver.log"
+              generate_request_id: true
+
+      - name: umservice    #####################umservice tcp ##########################################
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 9191
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: ckey
+              cluster: umserver
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyumservice.log"
+
+      - name: insidecontainerapp
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              stream_idle_timeout: 0s
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match: ############################ epssettings #################################
+                      prefix: "/EPSSettings" #need to modify
+                    route:
+                      cluster: ztssettingsservice
+                      max_grpc_timeout : "0.000s"
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ################### integration ############################################
+                      prefix: "/nokia_ztsl_IntegrationService_v1.AutoIntegrationService/Integrate" #need to modify
+                    route:
+                      cluster: integration
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ############################ epssettings #################################
+                      prefix: "/nokia.ztsl.DynamicAdaptationService.v1.DynamicAdaptationService/TriggerDynamicAdaptation" #need to modify
+                    route:
+                      cluster: dynamicadaptation
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match: ##################### integrationhttp ########################################
+                      prefix: "/vnflcm/"
+                    route:
+                      cluster: integrationhttp
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/auth/realms/zts/"
+                    route:
+                      cluster: integrationhttp 
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyingresintg.log"
+              generate_request_id: true
+      clusters: ###################################################### ztssettings service#############################################################################
+      - name: ztssettingsservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 9090
+            protocol: TCP
+        http2_protocol_options: {}
+      - name: daserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 2522
+            protocol: TCP
+      - name: dynamicadaptation ############################### dynamicadaptation #########################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 9070
+            protocol: TCP
+        http2_protocol_options: {}
+      - name: configservice ######################################## configservice ########################################################## 
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: configserverservice-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: metadataservice ######################################## metadataservice ########################################################## 
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: metadatastore-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {} 
+      - name: umserver    ###################################################### umservice #############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: umserver-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8002
+            protocol: TCP
+      - name: integration  ###################################################### Integration #############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 7080
+            protocol: TCP
+        http2_protocol_options: {} ###################################################### Integrationhttp #############################################################################
+      - name: integrationhttp
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 9999
+            protocol: TCP
+        http_protocol_options: {} 
+      - name: integrationnetact ###################################################### integrationnetact #############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: ztslenvoylb-serviceint-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8086
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: logreceiver  #####################################################logreciever###############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: logreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: efsmonitor  #####################################################logreciever###############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: efsmonitor-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: eventreceiver  #####################################################logreciever###############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}

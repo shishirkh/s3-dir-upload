@@ -1,0 +1,28 @@
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: dsserver #<--must have the same name as deployment/statefulset/daemonset which you want to backup
+spec:
+  autoEnableCron: false
+  volumes:
+  - dsserverpvc   #<---volume name you want to backup. NOTE: not mount path
+  backend:
+    mode: "AVAMAR"           #<--Modes supported now: "local","NETBKUP","AVAMAR","CEPHS3","AWSS3", case insensitiv
+  cronSpec: "0 0 * * *"  #<--cronjob frequency, here means very 10 minutes of every day
+  dataEncryption:
+    enable: true            #<--Whether to encrypt the backed up data or not.
+  k8sType: deployment      #<--The values should be deployment/statefulset/daemonset, case insensitive. This is newly added for CSF18.09.
+  brOption: 2         #<--This value only applies to statefulset (0 or 1 or 2) and daemonset (0 or 1).
+  maxiCopy: 2               #<--the maximum copy you want to saved.
+  ignoreFileChanged: false  #<--Whether to ignore the file change(s) or not when creating tar file in cbura sidecar.
+  hooks:
+  - name: dsserver-container  #<--container name in the pod where you want to execute hooks.
+    commands:
+      preBackupCmd: ["sh", "-c", "echo `date \"+%y/%m/%d %H:%M:%S\"`:  preBackupCmd done >> /tmp/preBkp"]       #<--command will be executed after sidecar insert
+      preBackupCmdOnAll: false                              #<--Whether to run preBackupCmd on all pods, default: false
+      postBackupCmd: ["sh", "-c", "echo `date \"+%y/%m/%d %H:%M:%S\"`:  postBackupCmd done >> /tmp/postBkp"]                                     #<--command will be executed before removing sidecar and after backup(scp)
+      postBackupCmdOnAll: false                             #<--Whether to run postBackupCmd on all pods, default: false
+      preRestoreCmd: ["sh", "-c", "echo `date \"+%y/%m/%d %H:%M:%S\"`:  preRestoreCmd done >> /tmp/preRes"]                                     #<--command will be executed after sidecar insert
+      preRestoreCmdOnAll: false                             #<--Whether to run preRestoreCmd on all pods, default: false
+      postRestoreCmd: ["sh", "-c", "echo `date \"+%y/%m/%d %H:%M:%S\"`:  postRestore done >> /tmp/postRes"] #<-- command will be executed before removing sidecar and after retore(scp)
+      postRestoreCmdOnAll: false                            #<--Whether to run postRestoreCmd on all pods, default: false

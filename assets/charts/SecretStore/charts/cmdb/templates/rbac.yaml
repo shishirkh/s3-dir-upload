@@ -1,0 +1,222 @@
+{{- if .Values.rbac_enabled }}
+# --------------------------------------------------
+#  Pre-Install RBAC
+#
+#  Permissions:
+#    - check if PVCs exist (preserved)
+#    - create deploy configmaps
+# --------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.name.podname }}-install
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: {{ .Values.name.podname }}-install
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-9"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+rules:
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "get", "list", "patch", "update", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}-install
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.name.podname }}-install
+  namespace: {{ .Release.Namespace }}
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ .Values.name.podname }}-install
+  apiGroup: rbac.authorization.k8s.io
+---
+
+# --------------------------------------------------
+#  Admin RBAC
+#
+#  Permissions:
+#    - create and manage all resources
+# --------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.name.podname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "pods", "persistentvolumeclaims", "secrets"]
+  verbs: ["create", "get", "list", "patch", "update", "delete"]
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.name.podname }}
+  namespace: {{ .Release.Namespace }}
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ .Values.name.podname }}
+  apiGroup: rbac.authorization.k8s.io
+---
+
+{{- if gt (int .Values.maxscale.count) 0 }}
+# --------------------------------------------------
+#  Leader-Elector RBAC
+#
+#  Permissions:
+#    - create and manage endpoints
+# --------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.name.podname }}-le
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-maxscale.labels" . | indent 4 }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}-le
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-maxscale.labels" . | indent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["endpoints"]
+  verbs: ["create", "delete", "get", "list", "patch", "update"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "patch", "update"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}-le
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-maxscale.labels" . | indent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.name.podname }}-le
+  namespace: {{ .Release.Namespace }}
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ .Values.name.podname }}-le
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- end }}
+# --------------------------------------------------
+#  Post-Delete RBAC
+#
+#  Permissions:
+#    - delete all resources
+#    - delete endpoints
+# --------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.name.podname }}-delete
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: {{ .Values.name.podname }}-delete
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-9"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+rules:
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims", "secrets", "configmaps", "endpoints"]
+  verbs: ["create", "get", "list", "patch", "update", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "patch", "update", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}-delete
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": "hook-succeeded, hook-failed"
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.name.podname }}-delete
+  namespace: {{ .Release.Namespace }}
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ .Values.name.podname }}-delete
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- end }}

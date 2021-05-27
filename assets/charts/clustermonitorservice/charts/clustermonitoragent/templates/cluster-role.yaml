@@ -1,0 +1,22 @@
+# Set role in compaas
+{{ if not .Values.global.compaas }}
+kind: ClusterRole
+{{ else }}
+kind: Role
+{{ end }} 
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: {{.Release.Namespace}}
+  name: pod-monitor-role-{{.Release.Namespace}}
+rules:
+- apiGroups:
+    - metrics.k8s.io
+    - pods.metrics.k8s.io
+    - ""
+  resources:
+  - nodes
+  - pods
+  verbs:
+  - get
+  - watch
+  - list

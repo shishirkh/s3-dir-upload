@@ -1,0 +1,8 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy ZT VNF Extension eventreceiver pods in EventProcessingService
+engine: gotpl
+maintainers:
+- name: Nokia
+name: eventreceiver
+version: 0.2.0

@@ -1,0 +1,14 @@
+apiVersion: v1
+appVersion: 1.0.100
+description: This chart is to deploy complete HCService in kubernets cluster
+engine: gotpl
+keywords:
+- trackerservice
+- "20.0"
+- trackerservice
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Monitoring and Troubleshooting Services", "SVC_NAME":
+  "Tracker Service", "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+maintainers:
+- name: Nokia
+name: trackerservice
+version: 1.5.10

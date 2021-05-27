@@ -1,0 +1,16 @@
+Cassandra CQL can be accessed via port {{ .Values.config.ports.cql }} on the following DNS name from within your cluster:
+Cassandra Thrift can be accessed via port {{ .Values.config.ports.thrift }} on the following DNS name from within your cluster:
+
+You can also see the cluster status by run the following:
+- kubectl exec -it --namespace {{ .Release.Namespace }} $(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} -o jsonpath='{.items[0].metadata.name}') /opt/cassandra/bin/nodetool status
+
+To tail the logs for the Cassandra pod run the following:
+- kubectl logs -f --namespace {{ .Release.Namespace }} $(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} -o jsonpath='{ .items[0].metadata.name }')
+
+Note:
+Cassandra CQL access will require credentials set when installing the Helm package.
+If you didn't set a password, one will be auto generated.
+You can find the base64 encoded version of the password by running the following command:
+kubectl get secrets {{ template "eventdb.fullname" . }} --namespace {{ .Release.Namespace }} -o yaml
+In ComPaas environment, check the /opt/cass-tools/.env to review credentials.
+

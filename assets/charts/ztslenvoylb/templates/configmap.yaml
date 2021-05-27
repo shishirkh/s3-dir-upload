@@ -1,0 +1,1022 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmap.name }}
+  labels:
+    app: {{ .Values.configmap.labels.app }}
+    chart: {{ template "ztslenvoylb.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/var/DebugTrace/envoylb/envoylb.log"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+          protocol: TCP
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+      - name: ckey
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 9090
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: ckey
+              cluster: umserver
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbckey.log"
+      - name: alarmeps
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 6061
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: alarmeps
+              route_config:
+                name: alarmeps
+                virtual_hosts:
+                - name: alarmeps
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: eventreciver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: alarmeps
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-alarmeps
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbalarmca.log"
+              generate_request_id: true
+      - name: sftpapp
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 7655
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: sftpapp
+              cluster: sftpserver
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbsftpapp.log"
+
+      - name: caapp
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 9091
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              alpn_protocols: h2,http/1.1
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: caapp
+              route_config:
+                name: caapp
+                virtual_hosts:
+                - name: caapp
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: caservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: caapp
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-caapp
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbcasrv.log"
+              generate_request_id: true
+      - name: app
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8080
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              stream_idle_timeout: 0s
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.cmservice.v1.configRepo/watch"
+                    route:
+                      cluster: cmreader
+                      max_grpc_timeout : "0.000s"
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+
+                  - match:
+                      prefix: "/nokia.ztsl.datasyncreader.v1.DataConfig/"
+                    route:
+                      cluster: dsreader
+                      max_grpc_timeout : "0.000s"
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbCmReaderDsReader.log"
+              generate_request_id: true
+
+
+      - name: datasyncapp
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8099
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: datasyncapp
+              cluster: datasync
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbdscli.log"
+
+      - name: tracker
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 7777
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: tracker
+              route_config:
+                name: tracker
+                virtual_hosts:
+                - name: tracker
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: trackerservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: tracker
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-tracker
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbtracker.log"
+              generate_request_id: true
+      - name: sendLogToLogReceiver
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8888
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: sendLogToLogReceiver
+              route_config:
+                name: sendLogToLogReceiver
+                virtual_hosts:
+                - name: sendLogToLogReceiver
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                     operation: sendLogToLogReceiver
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-sendLogToLogReceiver
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoyegress.log"
+              generate_request_id: true
+      - name: epslb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8079
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: epslb
+              route_config:
+                name: epslb
+                virtual_hosts:
+                - name: epslb
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: eventreciver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: epslb
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-epslb
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbesp.log"
+              generate_request_id: true
+      - name: logreceiverlb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8078
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: logreceiverlb
+              route_config:
+                name: logreceiverlb
+                virtual_hosts:
+                - name: logreceiverlb
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: logreceiverlb
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-logreceiverlb
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylblogsrv.log"
+              generate_request_id: true
+      - name: metadatastorelb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8077
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: metadatastorelb
+              route_config:
+                name: metadatastorelb
+                virtual_hosts:
+                - name: metadatastorelb
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: metadatastore
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: metadatastorelb
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-metadatastorelb
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbmetasrv.log"
+              generate_request_id: true
+      - name: secstore
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 7055
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: ss
+              stream_idle_timeout: 0s
+              route_config:
+                name: ss
+                virtual_hosts:
+                - name: ss
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: vaultagentservice
+                      max_grpc_timeout : "0.000s"
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: ss
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-ss
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbss.log"
+              generate_request_id: true
+      - name: integrationservicelb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8076
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: integrationservicelb
+              route_config:
+                name: integrationservicelb
+                virtual_hosts:
+                - name: integrationservicelb
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: integrationservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: integrationservicelb
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-integrationservicelb
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylbint.log"
+              generate_request_id: true
+
+      - name: lcmlb
+        address:
+          socket_address:
+            address: 0000:0000:0000:0000:0000:0000:0000:0000
+            ipv4_compat: true
+            port_value: 8075
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: lcmlb
+              route_config:
+                name: lcmlb
+                virtual_hosts:
+                - name: lcmlb
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: lcmservicelb
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: lcmlb
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-lcmlb
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/envoylb/envoylcmlb.log"
+              generate_request_id: true
+
+
+      clusters:
+      - name: eventreciver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventreceiver-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: logreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: logreceiver-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: metadatastore
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: metadatastore-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: integrationservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: integration-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: lcmservicelb
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: lcmserver-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http_protocol_options: {}
+        
+      - name: umserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: umserver-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8002
+            protocol: TCP
+      - name: caservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: caserverservice-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 7979
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+        http_protocol_options: {}
+      - name: vaultagentservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: vault-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: cmreader
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: cmreader-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: sftpserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: integration-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8123
+            protocol: TCP
+
+
+      - name: trackerservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: hc-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: dsreader
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: dsreader-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+         common_tls_context:
+          tls_params:
+            tls_minimum_protocol_version: "TLSv1_2"                     
+          tls_certificates:
+          - certificate_chain:
+              filename: "/certs/cert.pem"
+            private_key:
+              filename: "/certs/key.pem"
+          validation_context:
+            trusted_ca:
+              filename: "/certs/cacert.pem"
+        http2_protocol_options: {}  
+
+      - name: datasync
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: dscli-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 6060
+            protocol: TCP

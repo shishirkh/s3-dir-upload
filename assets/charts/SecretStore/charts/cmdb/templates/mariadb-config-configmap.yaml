@@ -1,0 +1,48 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name.podname }}-mariadb-config
+  labels:
+    {{- include "cmdb-mariadb.labels" . | indent 4 }}
+    release: "{{ .Release.Name }}"
+data:
+  mysqld.site: |-
+{{- if .Values.mariadb.mysqld_site_conf }}
+{{ .Values.mariadb.mysqld_site_conf | indent 4 }}
+{{- end }}
+{{- if .Values.mariadb.audit_logging }}
+    [mysqld]
+    plugin-load-add = server_audit=server_audit.so
+    server_audit_logging = {{ if .Values.mariadb.audit_logging.enabled -}}on{{- else -}}off{{- end }}
+    server_audit_events = {{ .Values.mariadb.audit_logging.events | default "CONNECT,QUERY_DCL,QUERY_DDL" }}
+{{- end }}
+{{- if .Values.mariadb.use_tls }}
+    [mysqld]
+    ssl_cipher = TLSv1.2
+
+{{- if .Values.mariadb.certificates.secret }}
+    [mysqld]
+    ssl
+    ssl-ca=/etc/my.cnf.d/ssl/{{ .Values.mariadb.certificates.server_ca_cert }}
+    ssl-cert=/etc/my.cnf.d/ssl/{{ .Values.mariadb.certificates.server_cert }}
+    ssl-key=/etc/my.cnf.d/ssl/{{ .Values.mariadb.certificates.server_key }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name.podname }}-mariadb-databases
+  labels:
+    {{- include "cmdb-mariadb.labels" . | indent 4 }}
+data:
+{{- if .Values.mariadb.databases }}
+  {{- range $index, $item := .Values.mariadb.databases }}
+  {{- if contains "-" $item.name  }}
+    {{- $err := (required "Database name invalid, contains hyphen" .err) }}
+  {{- end }}
+  {{ $item.name }}.conf: |-
+    {{ if $item.character_set }}CHARACTER SET = '{{ $item.character_set }}'{{ end }} {{ if $item.collate }}COLLATE = '{{ $item.collate }}'{{ end }}
+  {{- end }}
+{{- end }}

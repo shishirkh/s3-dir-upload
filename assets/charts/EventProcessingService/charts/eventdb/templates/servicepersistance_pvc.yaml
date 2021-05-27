@@ -1,0 +1,13 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: eventdb-pvc-claim
+  labels:
+    release: {{.Release.Name}}
+spec:
+  storageClassName: glusterfs-storageclass
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi

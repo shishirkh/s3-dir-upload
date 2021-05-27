@@ -1,0 +1,23 @@
+{{- if (gt (int .Values.server.count) 1) }}
+
+{{- $g := . -}}
+{{- range $i := until (int .Values.server.count) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" $g }}-server-{{ $i }}
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" $g | indent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - name: redis
+    port: 6379
+  selector:
+    {{- include "cm-crdb-redisio.common_labels" $g | indent 4 }}
+    type: server
+    statefulset.kubernetes.io/pod-name: {{ template "cm-crdb-redisio.fullname" $g }}-server-{{ $i }}
+{{- end }}
+
+{{- end }}

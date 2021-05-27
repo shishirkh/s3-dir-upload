@@ -1,0 +1,49 @@
+registry: "csf-docker-delivered.repo.lab.pl.alcatel-lucent.com"
+##
+## Service definitions
+##
+service:
+  ClientPort: 2379
+  Image: "etcdv3"
+  ImageTag: "v3.3.11"
+  ImagePullPolicy: "IfNotPresent"
+  Replicas: 3
+  resources:
+    requests:
+      Memory: {{ (resources | default("")).memory | default(model.properties.resources.properties.memory.default) }}
+      Cpu: {{ (resources | default("")).cpu | default(model.properties.resources.properties.cpu.default) }}
+    limits:
+      Memory: {{ (resources | default("")).memory | default(model.properties.resources.properties.memory.default) }}
+      Cpu: {{ (resources | default("")).cpu | default(model.properties.resources.properties.cpu.default) }}
+  StorageClass: {{ compaas.storageClass }}
+  tls: {{ tls | default(model.properties.tls.default) }}
+  user_defined_tls: {{ user_defined_tls | default(model.properties.user_defined_tls.default) }}
+  user_defined_ca: "{{ (user_defined_ca | default("")) | default(model.properties.user_defined_ca.default) | indent }}"
+  user_defined_client_cert: "{{ (user_defined_client_cert | default("")) | default(model.properties.user_defined_client_cert.default) | indent }}"
+  user_defined_client_key: "{{ (user_defined_client_key | default("")) | default(model.properties.user_defined_client_key.default) | indent }}"
+  user_defined_server_cert: "{{ (user_defined_server_cert | default("")) | default(model.properties.user_defined_server_cert.default) | indent }}"
+  user_defined_server_key: "{{ (user_defined_server_key | default("")) | default(model.properties.user_defined_server_key.default) | indent }}"
+  snapshotCount: {{ snapshotCount | default(model.properties.snapshotCount.default) }}
+  heartbeatInterval: {{ heartbeatInterval | default(model.properties.heartbeatInterval.default) }}
+  electionTimeout: {{ electionTimeout | default(model.properties.electionTimeout.default) }}
+  autoCompactionRetention:  {{ autoCompactionRetention | default(model.properties.autoCompactionRetention.default) }}
+  RBAC: {{ rbac_enable | default(model.properties.rbac_enable.default) }}
+  ramdiskWal: {{ ramdiskWal_enable | default(model.properties.ramdiskWal_enable.default) }}
+  ramdiskAll: {{ ramdiskAll_enable | default(model.properties.ramdiskAll_enable.default) }}
+  DialTimeoutforclient: "9s"
+  terminationGracePeriodSeconds: 60
+  nodeSelector: {}
+ingress:
+  enabled: true
+  #host:
+  ## If true, sso through keycloak will be enabled
+  sso: false
+  annotations:
+     csdc.ingress.kubernetes.io/rewrite-target: "/"
+     csdc.ingress.kubernetes.io/ssl-redirect: "false"
+  path: /v3alpha/
+cbur:
+  enabled: true
+  backendMode: "local"
+  cronSpec: "*/5 * * * *"
+  maxiCopy : 5

@@ -1,0 +1,8 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy ZT VNF Extension metadatastore pods in MetadataStoreService.
+engine: gotpl
+maintainers:
+- name: Nokia
+name: metadatastore
+version: 0.1.10

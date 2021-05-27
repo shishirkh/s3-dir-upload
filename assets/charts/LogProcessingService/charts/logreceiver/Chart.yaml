@@ -1,0 +1,8 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy ZT VNF Extension logreceiver pods in LogProcessingService
+engine: gotpl
+maintainers:
+- name: Nokia
+name: logreceiver
+version: 0.2.0

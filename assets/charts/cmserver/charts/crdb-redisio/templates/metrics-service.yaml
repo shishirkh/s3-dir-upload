@@ -1,0 +1,40 @@
+{{- if and (.Values.server.metrics) .Values.server.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-server-metrics
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    {{- toYaml .Values.server.metrics.annotations | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9121
+    targetPort: metrics
+  selector:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+    type: server
+{{- end }}
+{{- if and (.Values.sentinel.metrics) .Values.sentinel.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-sentinel-metrics
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+{{ toYaml .Values.sentinel.metrics.annotations | indent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9121
+    targetPort: metrics
+  selector:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+    type: sentinel
+{{- end }}

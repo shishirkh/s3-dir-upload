@@ -1,0 +1,15 @@
+appVersion: 1.2.3
+description: Secret key management provides a secure solution to store and control
+  access to cryptographic keys.
+engine: gotpl
+home: https://confluence.app.alcatel-lucent.com/display/plateng/CSKM+-+Secret+Key+Management
+icon: https://confluence.app.alcatel-lucent.com/download/thumbnails/157404630/icn_db.png
+keywords:
+- cskm
+- vault
+- 'X-COMPAAS: { "CATEGORY": "Security", "SVC_NAME": "Vault", "SVC_TYPE": "CSKM", "SVC_SCOPE":
+  [ "PRIVATE", "SHARED" ] }'
+maintainers:
+- name: CSF Security Team
+name: cskm
+version: 4.11.1

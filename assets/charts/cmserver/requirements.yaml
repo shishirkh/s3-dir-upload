@@ -1,0 +1,7 @@
+dependencies:
+ - name: custom-metrics
+   version: 1.5.31
+   repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+ - name: crdb-redisio
+   version: 1.5.31
+   repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual

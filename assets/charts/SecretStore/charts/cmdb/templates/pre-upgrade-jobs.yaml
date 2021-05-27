@@ -1,0 +1,248 @@
+## Handle major chart upgrades, which were at the following milestones:
+##   7.0.0 - introduced admin pod which runs small redis.io database to 
+##           replace SDC/etcd dependence:
+##           - add temporary redis.io advertisements for all mariadb pods so
+##             that the mariadb pods can restart and "see" the other pods.
+##   7.5.0 - added authentication to admin redis.io database.
+##           - add admin-secrets with the redis.io password
+##           - also requires the temporary advertisements since once admin pod
+##             restarts, old pods will no longer authenticate until they are
+##             restarted
+## When migrating to these chart versions, the "migrateFromChartVersion" is
+## required to be specified to enable special helm upgrade processing.
+{{- $min_chart := ">= 7.5.0-beta" -}}
+{{- $from_chart := default .Chart.Version .Values.migrateFromChartVersion }}
+
+{{- if semverCompare $min_chart $from_chart }}
+##
+##  Normal pre-upgrade job to be sent to admin container
+##
+{{- if not (eq (default "enable" .Values.hooks.preUpgradeJob) "disable") }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-pre-upgrade
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.hooks.deletePolicy | quote }}
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: {{ .Values.admin.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "cmdb-admin.labels" . | indent 8 }}
+        type: admin
+    spec:
+      {{- if and (.Values.rbac_enabled) (eq (.Values.cluster_type) "simplex") }}
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: pre-upgrade-admin
+        {{- include "cmdb-admin.image" . | indent 8 }}
+        args: [ "upgrade" ]
+        #args: [ "sh" ]
+        env:
+        - name: CLUSTER_TYPE
+          value: "{{ .Values.cluster_type }}"
+        - name: CLUSTER_NAME
+          value: "{{ .Values.cluster_name | default .Release.Name | trunc 32 }}"
+        # Note: NEW_*_SIZE will be updated on pre, before the *_SIZE
+        # is updated in configMap-based cluster.env
+        - name: NEW_CLUSTER_SIZE
+          value: "{{ .Values.mariadb.count }}"
+        - name: NEW_MAXSCALE_SIZE
+          value: "{{ .Values.maxscale.count }}"
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: HOOK_TYPE
+          value: "pre"
+        {{- if gt (int .Values.admin.preUpgradeTimeout) 0 }}
+        - name: HOOK_TIMEOUT
+          value: "{{ .Values.admin.preUpgradeTimeout }}"
+        {{- end }}
+        {{- if and .Values.admin.debug (gt (int (default '0' .Values.admin.jobDelay)) 0) }}
+        - name: HOOK_DELAY
+          value: "{{ .Values.admin.jobDelay }}"
+        {{- end }}
+        {{- include "cmdb-admin.service" . | indent 8 }}
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /chart
+        - name: event-cm
+          mountPath: /event
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+      volumes:
+      - name: cluster-cm
+        configMap:
+          name: {{ .Values.name.podname }}-mariadb-cluster
+      - name: event-cm
+        configMap:
+          name: {{ .Values.name.podname }}-admin-event
+{{- end }}
+{{- else }}
+##
+##  Migrating from pre-7.5.0 chart.
+##  Migration only necessary for non-simplex charts.
+##
+{{- if ne (.Values.cluster_type) "simplex" }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.name.podname }}-admin-secrets
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-failed
+type: Opaque
+data:
+  redis-password: {{ randAlphaNum 64 | b64enc | quote }}
+
+##
+##  Must add temporary redis.io service advertisements for all mariadb pods
+##  prior to mariadb statefulset upgrade since old pods will not be able to
+##  authenticate until they are restarted.
+##
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-pre-migrate
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.hooks.deletePolicy | quote }}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: {{ .Values.admin.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "cmdb-admin.labels" . | indent 8 }}
+        type: admin
+    spec:
+      {{- if .Values.rbac_enabled }}
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: pre-migrate
+        {{- include "cmdb-admin.image" . | indent 8 }}
+        command:
+        - bash
+        - "-c"
+        - |
+          set -eo pipefail
+          case ${CLUSTER_TYPE} in
+          master-slave)       ROLE="RS"; role="RM" ;;
+          master-master)      ROLE="RM"  ;;
+          galera)             ROLE="GDB" ;;
+          simplex|standalone) exit 0 ;;
+          *)
+              echo "ERROR: Invalid CLUSTER_TYPE: ${CLUSTER_TYPE}"
+              exit 1 ;;
+          esac
+          [[ -n "${role}" ]] || role=${ROLE}
+          >/tmp/deploy.keys
+          kubectl delete cm -n ${K8S_NAMESPACE} ${K8S_PREFIX}-admin-deploy 2>/dev/null || true
+          for pod in $(kubectl get pod -n ${K8S_NAMESPACE} -l${K8S_LABELS},type=mariadb -o jsonpath={.items[*].metadata.name}); do
+              podip=$(kubectl get pod ${pod} -n ${K8S_NAMESPACE} -o jsonpath={.status.podIP})
+              echo "['SET', 'service:advertise:mariadb:${pod}', '{\"role\": \"${role}\", \"ip\": \"${podip}\"}', 'EX', '900']" >>/tmp/deploy.keys
+              role=${ROLE}
+          done
+          echo "['SET', 'action:migrate_chart', '${MIGRATE_FROM_CHART}']" >>/tmp/deploy.keys
+          kubectl create cm -n ${K8S_NAMESPACE} ${K8S_PREFIX}-admin-deploy --from-file=/tmp/deploy.keys
+          kubectl label cm -n ${K8S_NAMESPACE} ${K8S_PREFIX}-admin-deploy ${K8S_LABELS}
+        env:
+        - name: CLUSTER_TYPE
+          value: "{{ .Values.cluster_type }}"
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: MIGRATE_FROM_CHART
+          value: "{{ $from_chart }}"
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+{{- end }}
+{{- end }}
+
+##
+##  Special pre-upgrade job to handle copying the metrics user
+##  password from the former mariadb-secrets Secret to the keystore
+##  on each mariadb pod.
+##
+---
+{{- if .Values.mariadb.metrics.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-metrics-secret-conversion
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.hooks.deletePolicy | quote }}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: {{ .Values.admin.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "cmdb-admin.labels" . | indent 8 }}
+        type: admin
+    spec:
+      {{- if .Values.rbac_enabled }}
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: metrics-admin
+        {{- include "cmdb-admin.image" . | indent 8 }}
+        command:
+        - bash
+        - "-c"
+        - |
+          set -eo pipefail
+          [[ -z ${METRICS_PW} ]] && exit 0
+          [[ -z ${METRICS_USER} ]] && exit 0
+          for pod in $(kubectl get pod -n ${K8S_NAMESPACE} -l${K8S_LABELS},type=mariadb -o jsonpath={.items[*].metadata.name}); do
+              kubectl exec -n ${K8S_NAMESPACE} ${pod} -c mariadb -- mariadb_passwd --get --user ${METRICS_USER} >/dev/null 2>&1 && continue
+              kubectl exec -n ${K8S_NAMESPACE} ${pod} -c mariadb -- mariadb_passwd --set --user ${METRICS_USER} --password ${METRICS_PW}
+          done
+        env:
+        - name: METRICS_PW
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.name.podname }}-mariadb-secrets
+              key: mysql-metrics-password
+              optional: true
+        - name: METRICS_USER
+          value: {{ .Values.mariadb.metrics.user | quote }}
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+{{- end }}

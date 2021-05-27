@@ -1,0 +1,426 @@
+{{- if .Values.rbac.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "eventdb.fullname" . }}-saadminpre
+  #namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ template "eventdb.fullname" . }}-cradminpre
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+rules:
+#- apiGroups:
+#  - extensions
+#  resources:
+#  - thirdpartyresources
+#  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+#- apiGroups:
+#  - apiextensions.k8s.io
+#  resources:
+#  - customresourcedefinitions
+#  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - configmaps
+  - secrets
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods/exec
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods/attach
+  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: ['']
+  resources:
+  - pods/status
+  verbs: ['get', 'list', 'watch']
+- apiGroups: ['']
+  resources:
+  - services
+  - endpoints
+  verbs: ['get', 'create', 'update']
+#- apiGroups: ['']
+#  resources:
+#  - nodes
+#  verbs: ['list', 'watch']
+#- apiGroups: ['']
+#  resources:
+#  - namespaces
+#  verbs: ['create', 'delete', 'deletecollection', 'get', 'list', 'patch', 'update', 'watch']
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims", "secrets"]
+  verbs: ['create',"get", "list", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ template "eventdb.fullname" . }}-namespace-adminpre
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "eventdb.fullname" . }}-saadminpre
+  namespace: "{{.Release.Namespace}}"
+roleRef:
+  kind: Role
+  name: {{ template "eventdb.fullname" . }}-cradminpre
+  #namespace: "{{.Release.Namespace}}"
+  #name: admin
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "eventdb.fullname" . }}-pre-upgrade-jobs
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: {{ template "eventdb.fullname" . }}
+      {{- if .Values.istio }}
+      {{- if .Values.istio.enabled }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+      {{- end }}
+      {{- end }}
+    spec:
+    ## if rbac enabled use the created service account
+    {{- if .Values.rbac.enabled }}
+      serviceAccountName: {{ template "eventdb.fullname" . }}-saadminpre
+    {{- end }}
+      restartPolicy: Never
+      volumes:
+      - name: lcm-cm
+        configMap:
+          name: {{ template "eventdb.fullname" . }}-lcm-event
+          items:
+          - key: heal_tag
+            path: keys
+          optional: true
+          #- name: kubectl
+          #hostPath:
+          #path: /usr/local/bin/kubectl
+      containers:
+      - name: pre-upgrade-admin
+        {{- if and .Values.global .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- else if .Values.admin.image.registry }}
+        image: "{{ .Values.admin.image.registry}}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- end }}
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        #- name: kubectl
+        #  mountPath: /kubectl
+        - name: lcm-cm
+          mountPath: /event
+        env:
+          - name: CURRENT_HEAL_TAG
+            valueFrom:
+              configMapKeyRef:
+                name: {{ template "eventdb.fullname" . }}-lcm-event
+                key: heal_tag
+          - name: NEW_HEAL_TAG
+            value: {{ .Values.lcm.heal_tag }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+        command:
+          - sh
+          - "-c"
+          - |
+            echo "Starting pre-upgrade job"
+            # Find cluster size prior to scale
+            export node_count=$(kubectl get sts --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | awk {'print $2'} | cut -d'/' -f2-)
+            echo "Pre-upgrade: Found statefulset spec.replicas: ${node_count}"
+            export current_cluster_name=$(kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- env | grep SS_CASSANDRA_CLUSTER_NAME | cut -d'=' -f2-)
+            export cluster_name={{ .Values.config.cluster_name }}
+            if [ "${current_cluster_name}" != "${cluster_name}" ]; then
+              echo "Pre-upgrade: Found current cluster name ${current_cluster_name} does not match ${cluster_name}"
+              for pod_id in $(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | grep {{ template "eventdb.fullname" . }}-[0-9] | sort -r |  awk '{ print$1 }')
+              do
+                echo "Pre-upgrade: Copying current cluster name to backup directory: pod $pod_id"
+                kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- sh -c "[[ -d /CASSANDRA_BR/cassandra/backup ]] && echo ${current_cluster_name} > /CASSANDRA_BR/cassandra/backup/cluster_name; [[ -d /CASSANDRA_DD/cassandra/backup ]] && echo ${current_cluster_name} > /CASSANDRA_DD/cassandra/backup/cluster_name"
+              done
+            fi
+            # Cluster size to scale
+            export scalecnt={{ .Values.replica_count }}
+
+            if [ $((node_count)) -gt $((scalecnt)) ]
+            then
+              echo "Pre-upgrade job: LCM event scale-in start"
+              # scale-in event
+              node_count=$((node_count-1))
+
+              # Decommission nodes to remove from the cluster
+              while [ $((node_count)) -ge $((scalecnt)) ]
+              do
+                kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-${node_count} -- touch /opt/cass-tools/.lcm_scalein
+
+                # Find the node id
+                export cID=$(kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-${node_count} -- /opt/cassandra/bin/nodetool info | grep ID | awk '{ print $3 }' | tr -d '\r')
+
+                echo "Pre-upgrade job: LCM scale-in event - nodetool decommision start"
+                kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-${node_count} -- /opt/cassandra/bin/nodetool decommission
+                # Check if the POD ID is in the nodetool status output
+                kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- /opt/cassandra/bin/nodetool status | grep $cID >/dev/null
+                ret=`echo $?`
+                while [ $ret -eq 0 ]
+                do
+                  sleep 10
+                  kubectl exec -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- /opt/cassandra/bin/nodetool status | grep $cID >/dev/null
+                  ret=`echo $?`
+                done
+                node_count=$((node_count-1))
+              done
+            elif [ $(NEW_HEAL_TAG) != $(CURRENT_HEAL_TAG) ]
+            then
+              # heal event - CURRENT_HEAL_TAG didn't change yet
+              for pod_id in $(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | grep {{ template "eventdb.fullname" . }}-[0-9] | sort -r |  awk '{ print$1 }')
+              do
+                kubectl delete pod ${pod_id} --namespace {{ .Release.Namespace }}
+                sleep 30
+                is_ready=$(kubectl describe pod ${pod_id} --namespace {{ .Release.Namespace }} | grep " Ready .*True" | awk '{ print $2 }')
+                while [ "${is_ready}" != "True" ]
+                do
+                  sleep 10
+                  is_ready=$(kubectl describe pod ${pod_id} --namespace {{ .Release.Namespace }} | grep " Ready .*True" | awk '{ print $2 }')
+                done
+                # Touch a marker for repair in post-upgrade
+                kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- touch /opt/cass-tools/.lcm_heal_repair
+              done
+
+            else
+              # Upgrade or update config event
+              echo "Pre-upgrade job: LCM event upgrade/update config start"
+              if [ ! -z "{{ .Values.config.cassandra_superpass }}" ]  && [ "$(kubectl get secrets {{ template "eventdb.fullname" . }} --namespace {{ .Release.Namespace }} -o yaml | grep cassandra_superpass | awk '{ print $2 }')" != "{{ .Values.config.cassandra_superpass }}" ] 
+              then
+                export current_cassandra_superuser={{ .Values.config.cassandra_superuser }}
+                export new_cassandra_superpass=$(echo {{ .Values.config.cassandra_superpass }} | base64 --decode)
+                # Update the secret
+                kubectl get secret {{ template "eventdb.fullname" . }} --namespace {{ .Release.Namespace }} -o yaml | sed "s/cassandra_superpass:.*/cassandra_superpass: {{ .Values.config.cassandra_superpass }}/g" | kubectl apply -f -
+                # Update the cassandra superuser password in the cassandra containers
+                for pod_id in $(kubectl get pods --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }} --no-headers=true | grep {{ template "eventdb.fullname" . }}-[0-9] | sort -r |  awk '{ print$1 }')
+                do
+                  kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- touch /opt/cass-tools/.lcm_cassandra_superpass
+                  kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- /opt/cass-tools/scripts/cassandra.sh --updateDBUser ${current_cassandra_superuser} ${new_cassandra_superpass} >/dev/null
+                  sleep 5
+                  kubectl exec -c cassandra-sidecar ${pod_id} --namespace {{ .Release.Namespace }} -- sed -i "s/\(^SS_CASSANDRA_SUPERUSER_PASS=\).*$/\1${new_cassandra_superpass}/g" /opt/cass-tools/.env
+                done
+              fi
+            fi
+
+            # Migrate secret - check if secret is resource created during pre-install hook with chart 2.0.3
+            kubectl get secret {{ template "eventdb.fullname" . }} --namespace {{ .Release.Namespace }} -o yaml | grep "helm.sh/hook: pre-install" > /dev/null 2>&1
+            # If secret is not pre-install hook, backup secret (secret will be recreated in post-upgrade)
+            [[ $? -eq 1 ]] && {
+              kubectl delete secret {{ template "eventdb.fullname" . }}-tmp --namespace {{ .Release.Namespace }} > /dev/null 2>&1
+              kubectl get secret {{ template "eventdb.fullname" . }} --namespace {{ .Release.Namespace }} -o yaml > /tmp/.secret.yaml
+              sed -i 's/name: {{ template "eventdb.fullname" . }}/name: {{ template "eventdb.fullname" . }}-tmp/' /tmp/.secret.yaml
+              kubectl apply -f /tmp/.secret.yaml
+            }
+
+            #Form cql commands into /tmp/reportingTableDump.cql
+            cat <<EOF >/tmp/reportingTableDump.cql          
+            copy pmspace.reporting_counter to '/CASSANDRA_DD/cassandra/reporting_counter.csv' with header=true;
+            EOF
+
+            #Forming shell script into /tmp/reportingTableDump.sh
+            cat <<EOF >/tmp/reportingTableDump.sh
+            python /opt/cassandra/bin/cqlsh.py -f /CASSANDRA_DD/cassandra/reportingTableDump.cql \$(hostname -i) $1 9042 -u suadmincass -p yt_xk39b --request-timeout=360000000
+            EOF
+            #Copy reportingTableDump.cql & reportingTableDump.sh script and execute reportingTableDump.sh script inside cassandra-sidecar container
+            kubectl cp /tmp/reportingTableDump.cql  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/reportingTableDump.cql -c cassandra-sidecar
+            kubectl cp /tmp/reportingTableDump.sh  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/reportingTableDump.sh -c cassandra-sidecar
+            kubectl exec -it  -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- bash -c "chmod 755 /CASSANDRA_DD/cassandra/reportingTableDump.sh ; /CASSANDRA_DD/cassandra/reportingTableDump.sh /CASSANDRA_DD/cassandra/reportingTableDump.cql"
+
+            #Form cql commands into /tmp/operational.csv
+            cat <<EOF >/tmp/operationalTableDump.cql
+            copy fmspace.operational_alarms to '/CASSANDRA_DD/cassandra/operational.csv'  with DELIMITER = '#' AND  header=true;
+            ALTER TABLE fmspace.processed_alarms ADD host_name text ;
+            EOF
+
+            #Forming shell script into /operationalTableDump.sh
+            cat <<EOF >/tmp/operationalTableDump.sh
+            python /opt/cassandra/bin/cqlsh.py -f /CASSANDRA_DD/cassandra/operationalTableDump.cql \$(hostname -i) $1 9042 -u suadmincass -p yt_xk39b --request-timeout=360000000
+            EOF
+
+            #Forming shell script to update csv file
+            cat <<EOF >/tmp/updatecsv.sh
+            #!/bin/sh
+            now=\$(date "+%y-%m-%d_%H-%M-%S")
+            Logfile="/CASSANDRA_DD/cassandra/updatecsv_\$now"
+
+            create_logfile()
+            {
+              touch \$Logfile
+              chmod 750 \$Logfile
+            }
+            create_logfile
+            
+            echo "starting updatecsv.sh" | tee -a \$Logfile
+            oldcsv="/CASSANDRA_DD/cassandra/operational.csv"
+            count=\$(head -1 /CASSANDRA_DD/cassandra/operational.csv | sed 's/[^#]//g' | wc -c)
+            echo "count is \$count" | tee -a \$Logfile
+            if [ -f /CASSANDRA_DD/cassandra/updatedOperational.csv ]
+            then
+                  rm -r /CASSANDRA_DD/cassandra/updatedOperational.csv
+                  echo "removing old file updatedOperational.csv" | tee -a \$Logfile
+            fi
+
+            updatedcsv="/CASSANDRA_DD/cassandra/updatedOperational.csv"
+            itr=0
+            if [ \$count == 33 ]
+            then
+              while IFS='#' read -r f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 
+              do
+                itr=\$(expr \$itr + 1)
+                if [ \$itr == 1 ]
+                then
+                      echo "\$f0#"alarm_uid"#\$f2#\$f32#\$f1#\$f3#\$f4#\$f5#\$f6#\$f7#\$f8#\$f9#\$f10#\$f11#\$f12#\$f13#\$f14#\$f15#\$f16#\$f17#\$f18#\$f19#\$f20#\$f21#\$f22#"host_name"#\$f23#\$f24#\$f25#\$f26#\$f27#\$f28#\$f29#\$f30#\$f31" >> \$updatedcsv
+                      echo "successfully updated the header" | tee -a \$Logfile
+                else
+                      echo "\$f0#\$f5-\$f6#\$f2#\$f32#\$f1#\$f3#\$f4#\$f5#\$f6#\$f7#\$f8#\$f9#\$f10#\$f11#\$f12#\$f13#\$f14#\$f15#\$f16#\$f17#\$f18#\$f19#\$f20#\$f21#\$f22#""#\$f23#\$f24#\$f25#\$f26#\$f27#\$f28#\$f29#\$f30#\$f31" >> \$updatedcsv
+                      echo "successfully updated the value\$itr" | tee -a \$Logfile
+                fi
+              done < "\$oldcsv"
+              elif [ \$count == 32 ]
+              then
+                while IFS='#' read -r f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31
+                do
+                  itr=\$(expr \$itr + 1)
+                  if [ \$itr == 1 ]
+                  then
+                        echo "\$f0#"alarm_uid"#\$f2#\$f31#\$f1#\$f3#\$f4#\$f5#\$f6#\$f7#\$f8#\$f9#\$f10#\$f11#\$f12#\$f13#\$f14#\$f15#\$f16#\$f17#\$f18#\$f19#\$f20#\$f21#"first_dup_time_stamp"#"host_name"#\$f22#\$f23#\$f24#\$f25#\$f26#\$f27#\$f28#\$f29#\$f30" >> \$updatedcsv
+                        echo "successfully updated the header" | tee -a \$Logfile
+                  else
+                        echo "\$f0#\$f5-\$f6#\$f2#\$f31#\$f1#\$f3#\$f4#\$f5#\$f6#\$f7#\$f8#\$f9#\$f10#\$f11#\$f12#\$f13#\$f14#\$f15#\$f16#\$f17#\$f18#\$f19#\$f20#\$f21#\$f21#""#\$f22#\$f23#\$f24#\$f25#\$f26#\$f27#\$f28#\$f29#\$f30"  >> \$updatedcsv
+                        echo "successfully updated the value\$itr" | tee -a \$Logfile
+                  fi
+                done < "\$oldcsv"
+            fi
+            tr -d '\r' < /CASSANDRA_DD/cassandra/updatedOperational.csv > /CASSANDRA_DD/cassandra/updatedOperational1.csv
+            echo "successful run of updatecsv.sh" | tee -a \$Logfile
+            EOF
+
+            #Copy operationalTableDump.cql & reportingTableDump.sh script and execute reportingTableDump.sh script inside cassandra-sidecar container
+            kubectl cp /tmp/operationalTableDump.cql  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/operationalTableDump.cql -c cassandra-sidecar
+            kubectl cp /tmp/operationalTableDump.sh  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/operationalTableDump.sh -c cassandra-sidecar
+            kubectl cp /tmp/updatecsv.sh  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/updatecsv.sh -c cassandra-sidecar
+            kubectl exec -it  -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- bash -c "chmod 755 /CASSANDRA_DD/cassandra/operationalTableDump.sh /CASSANDRA_DD/cassandra/updatecsv.sh; /CASSANDRA_DD/cassandra/operationalTableDump.sh /CASSANDRA_DD/cassandra/operationalTableDump.cql; /CASSANDRA_DD/cassandra/updatecsv.sh"
+
+            #droping old table and creating new
+            cat <<EOF >/tmp/schema.cql            
+            CREATE TABLE fmspace.operational_alarms_new (
+                vnf_name text,
+                alarm_uid text,
+                specific_problem text,
+                vnfc_type text,
+                vnfc_name text,
+                container_name text,
+                process_name text,
+                alarm_group_id int,
+                alarm_id int,
+                alarm_short_text text,
+                alarm_severity text,
+                alarm_action_tobe_performed text,
+                alarm_key text,
+                alarm_long_text text,
+                alarm_name text,
+                alarm_probable_cause_id int,
+                alarm_probable_cause_string text,
+                alarm_state text,
+                alarm_task text,
+                alarm_type text,
+                alarm_vnf_state text,
+                event_id int,
+                event_source text,
+                event_time_stamp text,
+                first_dup_time_stamp text,
+                host_name text,
+                last_epoch_time text,
+                nf_naming_code text,
+                nfc_naming_code text,
+                product_presentation_name_in_netact text,
+                release text,
+                sequence_id int,
+                short_text_variables map<text, text>,
+                start_epoch_time text,
+                vnf_type text,
+                PRIMARY KEY ((vnf_name, alarm_uid), specific_problem, vnfc_type, vnfc_name, container_name, process_name, alarm_group_id, alarm_id, alarm_short_text, alarm_severity)
+            ) WITH CLUSTERING ORDER BY (specific_problem ASC, vnfc_type ASC, vnfc_name ASC, container_name ASC, process_name ASC, alarm_group_id ASC, alarm_id ASC, alarm_short_text ASC, alarm_severity ASC)
+                AND bloom_filter_fp_chance = 0.01
+                AND caching = {'keys': 'ALL', 'rows_per_partition': 'NONE'}
+                AND comment = ''
+                AND compaction = {'class': 'org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy', 'max_threshold': '32', 'min_threshold': '4'}
+                AND compression = {'chunk_length_in_kb': '64', 'class': 'org.apache.cassandra.io.compress.LZ4Compressor'}
+                AND crc_check_chance = 1.0
+                AND dclocal_read_repair_chance = 0.1
+                AND default_time_to_live = 0
+                AND gc_grace_seconds = 0
+                AND max_index_interval = 2048
+                AND memtable_flush_period_in_ms = 0
+                AND min_index_interval = 128
+                AND read_repair_chance = 0.0
+                AND speculative_retry = '99PERCENTILE';
+            copy fmspace.operational_alarms_new from '/CASSANDRA_DD/cassandra/updatedOperational1.csv' with DELIMITER = '#'  AND NULL=' ' AND  header=true;
+            EOF
+
+            #Forming shell script into /schema.sh
+            cat <<EOF >/tmp/schema.sh
+            python /opt/cassandra/bin/cqlsh.py -f /CASSANDRA_DD/cassandra/schema.cql \$(hostname -i) $1 9042 -u suadmincass -p yt_xk39b --request-timeout=360000000
+            EOF
+            #Copy schema.cql & schema.sh and execute schema.sh script inside cassandra-sidecar container
+            kubectl cp /tmp/schema.cql  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/schema.cql -c cassandra-sidecar
+            kubectl cp /tmp/schema.sh  --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0:/CASSANDRA_DD/cassandra/schema.sh -c cassandra-sidecar
+            # kubectl exec -it  -c cassandra-sidecar --namespace {{ .Release.Namespace }} {{ template "eventdb.fullname" . }}-0 -- bash -c "chmod 755 /CASSANDRA_DD/cassandra/schema.sh; /CASSANDRA_DD/cassandra/schema.sh /CASSANDRA_DD/cassandra/schema.cql"
+            echo "Finished pre-upgrade job"
+

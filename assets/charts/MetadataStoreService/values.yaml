@@ -1,0 +1,77 @@
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+#set for false to use emptyDir 
+ persistentVolume:
+  enabled: true
+  
+ #Place all dockerTags for subcharts here to ensure eventprocessing service deployment as individual chart
+
+ casecret: zts1ztssecret
+ clustername: zts1
+ ipv6interface: disable
+ metadata_max_release: "20"
+ metadata_min_release: "2.0"
+ postbackup: 0
+ postrestore: 0
+ prebackup: 0
+ prerestore: 0
+ terminationGracePeriodSeconds: 30
+ vnfname: zts1
+ vnftype: ZTS
+
+metadatastore:
+  consulagent:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 512Mi
+        cpu: 250m
+  metadatastore:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+  fluentbit:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 2048Mi
+        cpu: 500m
+  envoysidecar:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+  registration:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+  cbursidecar:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m

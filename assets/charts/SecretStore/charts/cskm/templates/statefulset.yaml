@@ -1,0 +1,285 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{  .Values.name.podname  }}
+  labels:
+    vnfType: "{{.Values.global.vnftype }}"
+    vnfName: "{{ .Values.global.vnfname }}"
+    vnfcType: SS
+    vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+    vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+
+spec:
+  serviceName: {{  .Values.name.podname  }}
+  replicas: {{ .Values.CLUSTER_SIZE}}
+  podManagementPolicy: "Parallel"
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: {{  .Values.name.podname  }}
+        release: "{{ .Release.Name }}"
+        heritage: "{{ .Release.Service }}"
+        vnfType: "{{ .Values.global.vnftype }}"
+        vnfName: "{{ .Values.global.vnfname }}"
+        vnfcType: "{{ .Values.global.vnfctype }}"
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: "{{ .Values.global.vnfctype }}"
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+          runAsUser: 1000
+          fsGroup: 1000
+          runAsNonRoot: true
+      {{ if (and .Values.backend.initContainerEnabled (or (eq .Values.backend.type "cmdb") (eq .Values.backend.type "csdc"))) }}
+      initContainers:
+      - name: wait-for-cskm-backend
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.busyboximageRepo }}:{{ .Values.image.busybox.dockerTag }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        command:
+          - sh
+          - -c
+          - |
+            until nc -z -v -w10 secretstore-mariadb.{{ .Release.Namespace }}.svc.cluster.local {{ .Values.backend.servicePort }}; do
+                echo "Waiting for backend service..."
+                sleep 2;
+            done;
+
+            echo 'CSKM Backend is OK!'
+        resources:
+          requests:
+            memory: {{ .Values.initBusyBoxContainer.resources.requests.memory | default "256Mi" | quote }}
+            cpu: {{ .Values.initBusyBoxContainer.resources.requests.cpu | default "250m" | quote }}
+          limits:
+            memory: {{ .Values.initBusyBoxContainer.resources.limits.memory | default "256Mi" | quote }}
+            cpu: {{ .Values.initBusyBoxContainer.resources.limits.cpu | default "250m" | quote }}
+      {{ end }}
+      containers:
+        - name: {{ .Values.name.podname }}
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.imageRepo }}:{{ .Values.image.skm.dockerTag }}"
+          imagePullPolicy: "{{ .Values.image.skm.pullPolicy  }}"
+          ports:
+            - containerPort: 8200
+              name: skm
+          env:
+            - name: VAULT_AUDIT_STDOUT_EN
+              value: "{{ .Values.logging.auditToStdoutEnabled }}"
+            - name: VAULT_AUDIT_FILE_EN
+              value: "{{ .Values.logging.auditToFileEnabled }}"
+            - name: VAULT_SYS_STDOUT_EN
+              value: "{{ .Values.logging.systemToStdoutEnabled }}"
+            - name: VAULT_SYS_FILE_EN
+              value: "{{ .Values.logging.systemToFileEnabled }}"
+            - name: VAULT_LOG_LEVEL
+              value: "{{ .Values.logging.systemLogLevel }}"
+            - name: VAULT_ALARMS_STDOUT_EN
+              value: "{{ .Values.logging.alarmsToStdotEnabled }}"
+            - name: VAULT_ALARMS_FILE_EN
+              value: "{{ .Values.logging.alarmsToFileEnabled }}"
+            - name: VAULT_METRICS_STDOUT_EN
+              value: "{{ .Values.logging.metricsToStdotEnabled }}"
+            - name: VAULT_METRICS_FILE_EN
+              value: "{{ .Values.logging.metricsToFileEnabled }}"
+            - name: VAULT_ULOGFILE
+              value: "{{ .Values.logging.filePath }}"
+            - name: VAULT_ULOGFILE_NUM
+              value: "{{ .Values.logging.numOfFiles }}"
+            - name: VAULT_ULOGFILE_SIZE
+              value: "{{ .Values.logging.fileSizeBytes }}"
+            - name: AUTOMATE
+              value: "{{ .Values.autoInitUnseal }}"
+            - name: POSTINSTALL_TRACE_ENABLED
+              value: "{{ .Values.postInstallTraceEnabled }}"
+            - name: TLS_DISABLED
+              value: "{{ .Values.tlsDisabled }}"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          {{- if .Values.envVariables }}
+{{ toYaml .Values.envVariables | indent 12 }}
+          {{- end }}
+          volumeMounts:
+          - name: {{ .Values.name.podname  }}-vault-config-volume
+            mountPath: /etc/vault
+          - name: backup
+            mountPath: "/cskm/backup"
+          {{ if .Values.logStorage.doPvClaim }}
+          - name: log-pv
+            mountPath: /opt/vault/logs
+            readOnly: false
+          {{ end }}
+          {{ if (eq .Values.backend.type "file")  }}
+          - name: filebackend-pv
+            mountPath: /opt/vault/file
+            readOnly: false
+          {{ end }}
+          - name: secret-volume
+            mountPath: /opt/vault/secrets
+          {{ if (eq .Values.backend.type "csdc") }}
+          - name: etcdconfig
+            mountPath: /etc/etcd/
+          {{- if .Values.backend.tlsEnabled }}
+          - name: client-cert
+            mountPath: /etc/tls/client-cert
+          - name: ca-cert
+            mountPath: /etc/tls/ca-cert
+          {{- end }}
+          {{- end }}
+          - name: vault-cert
+            mountPath: /opt/vault/tls/
+          {{- if ( or (eq .Values.autoInitUnseal "1") (eq .Values.autoInitUnseal "0")) }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /v1/sys/health?
+                {{- if .Values.readinessProbe.standbyok -}}standbyok=true&perfstandbyok=true&{{- end }}
+                {{- if .Values.readinessProbe.uninitok -}}uninitcode=204&{{- end }}
+                {{- if .Values.readinessProbe.sealedok -}}sealedcode=204&{{- end }}
+              port: {{ .Values.httpPort | default 8200 }}
+              scheme: {{ if .Values.tlsDisabled }} HTTP {{ else }} HTTPS {{ end }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /v1/sys/health?
+                {{- if .Values.livenessProbe.standbyok -}}standbyok=true&perfstandbyok=true&{{- end }}
+                {{- if .Values.livenessProbe.uninitok -}}uninitcode=204&{{- end }}
+                {{- if .Values.livenessProbe.sealedok -}}sealedcode=204&{{- end }}
+              port: {{ .Values.httpPort | default 8200 }}
+              scheme: {{ if .Values.tlsDisabled }} HTTP {{ else }} HTTPS {{ end }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- end }}
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory | default "512Mi" | quote }}
+              cpu: {{ .Values.resources.requests.cpu | default "250m" | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory | default "512Mi" | quote }}
+              cpu: {{ .Values.resources.limits.cpu | default "250m" | quote }}
+        {{- if .Values.cbur.enabled }}
+        - name: cbura-sidecar
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.cbur.image.repository }}:{{ .Values.image.cbura.dockerTag }}"
+          imagePullPolicy: {{ .Values.cbur.image.PullPolicy }}
+          {{- if .Values.cbur.securityContext }}
+          securityContext:
+            runAsUser: {{ default 1000 .Values.cbur.securityContext.runAsUser }}
+          {{- end }}
+          volumeMounts:
+          - mountPath: /backup
+            name: "backup"
+          resources:
+            requests:
+              memory: {{ .Values.cbur.resources.requests.memory | default "512Mi" | quote }}
+              cpu: {{ .Values.cbur.resources.requests.cpu | default "250m" | quote }}
+            limits:
+              memory: {{ .Values.cbur.resources.limits.memory | default "512Mi" | quote }}
+              cpu: {{ .Values.cbur.resources.limits.cpu | default "250m" | quote }}
+        {{- end }}
+      volumes:
+        - name: {{  .Values.name.podname  }}-vault-config-volume
+          configMap:
+            name: {{  .Values.name.podname  }}-vault-config
+        - name: secret-volume
+          secret:
+            secretName: {{  .Values.name.podname  }}-secret
+        {{ if (eq .Values.backend.type "csdc") }}
+        - name: etcdconfig
+          configMap:
+            name: "compaas-sdc-server-configmap"
+            items:
+            - key: config
+              path: etcd.client.conf
+        {{- if .Values.backend.tlsEnabled }}
+        - name: client-cert
+          secret:
+            secretName: "sdc-client-cert-secret"
+        - name: ca-cert
+          secret:
+            secretName: "sdc-ca-cert-secret"
+        {{- end }}
+        {{- end }}
+        - name: vault-cert
+          secret:
+            secretName: "{{  .Values.name.podname  }}-vault.tls"
+      {{ if .Values.nodeSelector }}
+      nodeSelector:
+      {{- range $key, $value := .Values.nodeSelector }}
+        {{ $key }}: "{{- $value }}"
+      {{- end }}
+      {{ end }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{  .Values.name.podname  }}
+              topologyKey: "kubernetes.io/hostname"
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{  .Values.name.podname  }}
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+
+  volumeClaimTemplates:
+  {{ if (eq .Values.backend.type "file")  }}
+  - metadata:
+      name: filebackend-pv
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          storage: "{{ .Values.backendFileStorage.size }}"
+      {{- if .Values.compaas }}
+      storageClassName: "{{ .Values.compaas.storageClass }}"
+      {{- else if .Values.backendFileStorage.class }}
+      storageClassName: "{{ .Values.backendFileStorage.class }}"
+      {{- end }}
+  {{ end }}
+  {{ if .Values.logStorage.doPvClaim }}
+  - metadata:
+      name: log-pv
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          storage: "{{ .Values.logStorage.size }}"
+      {{- if .Values.compaas }}
+      storageClassName: "{{ .Values.compaas.storageClass }}"
+      {{- else if .Values.logStorage.class }}
+      storageClassName: "{{ .Values.logStorage.class }}"
+      {{- end }}
+  {{ end }}
+  - metadata:
+      name: backup
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          storage: "{{ .Values.cbur.backupStorage.size }}"
+      {{- if .Values.compaas }}
+      storageClassName: "{{ .Values.compaas.storageClass }}"
+      {{- else if  .Values.cbur.backupStorage.class }}
+      storageClassName: "{{  .Values.cbur.backupStorage.class }}"
+      {{- end }}

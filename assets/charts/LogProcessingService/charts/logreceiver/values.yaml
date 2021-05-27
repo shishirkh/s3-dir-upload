@@ -1,0 +1,160 @@
+# Default values for FMService.
+# Author: Alexander Solomon
+# This is a YAML-formatted file.
+# Declare name/value pairs to be passed into your templates.
+#
+
+global:
+ #imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ casecret: zts1ztssecret
+ clustername: "zts1"
+ datacenter: "dc1"
+ tlsoption: "inable"
+ imageRegistry: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets: 
+  name: ztsl-helm-registry
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: "ZTS"
+ vnfname: "zts1"
+ vnfctype: "LFS" 
+ #consulAgentDnsIpInt: 10.136.203.3
+ #consulAgentDnsPortInt: 8600
+ counteralarmtracelevel: "error"
+ DestinationType:
+   splunk: true
+   sftp: true
+ #  elastic: false
+countersenv:
+ channelbuffsize : 1000
+lms_service_enabled: false
+
+consulserver:
+ servicename: sdservice
+
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerProtocol: TCP
+
+containers:
+ consulagentName: consulagent-container
+
+consulmetadata:
+  name: cmserver
+  labels:
+    app: cmserverapp
+
+consulenv:
+  ztslenvoylbregid: logreceiver-service # [ eg: ztslenvoylbregid: "lcmserver-service" ]
+  ZTSName: "zts1"
+
+consulagentenv:
+ servicedomainName: "svc.cluster.local"
+ domainName: "default.svc.cluster.local"
+ agentbindip: "0.0.0.0"
+
+Replicas: 2
+
+image:
+  logreceiverimage:
+    dockerTag: 1.5.37 
+    PullPolicy: Always
+
+  logagentimage:
+    dockerTag: 1.5.37 
+    PullPolicy: Always
+
+  splunkagentimage:
+    dockerTag: 1.5.37 
+    PullPolicy: Always
+
+  envoy:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+
+  initcontainersimage:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+
+  consul:
+    dockerTag: 1.5.37
+    pullPolicy: Always
+
+  consulregistration:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+
+configmap:
+  name: configmapenvoylogreceiver
+  labels:
+    app: configmapenvoylogreceiver-label
+
+ExternalIP: 10.96.77.163
+
+consulagent:
+  consulAgentDnsIpInt: 127.0.0.1
+  consulAgentDnsPortInt: 8600
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+config:
+  traceLevel: error
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.json"
+  - "--mode serve"
+  - "--v2-config-only"
+
+logreceiver:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+logagent:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+splunkagent:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 2000m
+pvcStorage:
+  streamstoresize: 10Gi
+
+envoyhttpport: 8888

@@ -1,0 +1,8 @@
+appVersion: "20.2"
+description: A Helm chart for ZTSL
+home: https://confluence.int.net.nokia.com/pages/viewpage.action?spaceKey=CVP&title=Zero+Touch+Service+Layer+%28Core+PaaS%29+Home+Page
+maintainers:
+- email: ztsl@nokia.com
+  name: ztsluser
+name: ztsl
+version: 1.5.52

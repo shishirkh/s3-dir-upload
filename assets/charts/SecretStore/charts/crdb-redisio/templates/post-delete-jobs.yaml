@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-post-delete
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+    release: "{{ .Release.Name }}"
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hookDeletePolicy | quote }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "crdb-redisio.common_labels" . | indent 8 }}
+        type: admin
+    spec:
+      securityContext:
+        runAsUser: 6379
+        runAsGroup: 6379
+        fsGroup: 6379
+      {{- if .Values.rbacEnabled }}
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: post-delete-admin
+        {{- include "crdb-redisio.admin.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+        args: [ "delete" ]
+        env:
+        - name: GROUP_NAME
+          value: {{ template "crdb-redisio.groupname" . }}
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: HOOK_TYPE
+          value: "post"
+        - name: PRESERVE_PVC
+          value: {{ .Values.server.persistence.preservePvc | quote }}
+        - name: RBAC_ENABLED
+          value: {{ .Values.rbacEnabled | quote }}
+        - name: DEBUG
+          value: {{ quote (.Values.admin.debug | default "") }}

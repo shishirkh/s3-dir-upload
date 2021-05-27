@@ -1,0 +1,399 @@
+# Default values for EventDB.
+# Author: Vikas Shakya
+# This is a YAML-formatted file.
+# Declare name/value pairs to be passed into your templates.
+#
+
+### General Parameters: pod management, security
+
+global:  
+  imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+  imagePullSecrets:
+   name: ztsl-helm-registry #art-regcred  
+  casecret: zts1ztssecret
+  clustername: "zts1"
+  datacenter: "dc1"
+  caservicename: caserverservice.default.svc.cluster.local
+  metadata_max_release: "19.0"
+  metadata_min_release: "0.5"
+  vnfname: zts1
+  vnfctype: "EFS"
+  vnftype: "ZTS"  
+  counteralarmtracelevel: "error"
+
+countersenv:
+  channelbuffsize : 1000
+
+### PodName
+nameOverride: zts-eventdb
+
+
+### Consul Config
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerProtocol: TCP
+
+consulserver:
+ servicename: sdservice
+
+containers:
+ consulagentName: consulagent-container
+
+consulmetadata:
+  name: zts-eventdb
+  labels:
+    app: eventdbapp
+
+consulenv:
+  ztslenvoylbregid: eventdb-service 
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  domainName: "default.svc.cluster.local"  
+  agentbindip: "0.0.0.0"  
+
+
+### Container and configuration parameters
+
+image:
+  eventdb:
+    repository: eventdb
+    dockerTag: 1.5.37
+    pullPolicy: Always  
+    port: 8989
+    restPort: 9070
+
+  consul:
+    repository: consul
+    dockerTag: 1.5.37
+    pullPolicy: Always
+
+  envoy:
+    repository: envoysidecarproxywithtls
+    dockerTag: 1.5.37
+    pullPolicy: Always
+
+  consulregistration:
+    repository: alpine-curl
+    dockerTag: 1.5.37
+    pullPolicy: Always
+
+  fluentbit:
+    repository: lfsclient
+    dockerTag: 1.5.37
+    pullPolicy: Always
+ 
+  cassandra:
+    registry: 
+    repository: csf/ccas_apache    
+    csfTag: "3.11.4.379"
+    pullPolicy: Always  
+
+configmap:
+  name: configmapenvoyeventdb
+  labels:
+    app: configmapenvoyeventdb-label
+
+ExternalIP: 10.96.77.153
+
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.json"
+  - "--mode serve"
+  - "--v2-config-only"
+
+
+## If cluster have RBAC enabled (yes by default) and should RBAC role be created?
+rbac:
+  enabled: true
+  create: false
+
+podManagementPolicy: OrderedReady
+updateStrategy:
+  type: RollingUpdate
+
+## Additional pod annotations
+## Ref: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+
+## Additional pod labels
+## Ref: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+## Replicas count
+replica_count: 3
+
+## Affinity
+## Note: If minconfig is enabled, antiaffinity is forced to soft
+antiAffinity: "hard"
+
+service:
+  type: ClusterIP  
+  clusterIP: None
+
+persistence:  
+  ## Cassandra Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.
+  storageClass: "glusterfs-storageclass"
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+  ## If Backup uses the same data volume, comment the whole backup section, except "backup:"
+  ## If storageClass is defined, then storageClassName: <storageClass>
+  ## If storageClass is undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.
+  backup: 
+  #  enabled: true
+  #  #storageClass: "glusterfs-storageclass"
+  #  accessMode: ReadWriteOnce
+  #  size: 10Gi
+
+volumeClaim:
+  name: data
+  backup: 
+    name: backup 
+
+## Optional Delete/preserve pvc(s) and secrets
+deleteJob:
+  auto_remove_pvc: true
+  auto_remove_secret: true
+
+## Running the container as non-root (cassandra)
+securityContext:
+  fsGroup: 818
+  runAsUser: 818
+  runAsGroup: 818
+
+resources:
+  requests:
+    memory: 1024Mi
+    cpu: 100m
+  limits:
+    memory: 12288Mi
+    cpu: 8000m
+  java_heapsize: 4g
+  java_newsize: 512m
+
+
+minconfig:
+  Enabled: false
+  MIN_CONFIG: "yes"
+  overrideResources: true
+  resources:
+    requests:
+      memory: 1024Mi
+      cpu: 1000m
+    limits:
+      memory: 12288Mi
+      cpu: 8000m
+  java_heapsize: 128m
+  java_newsize: 12m
+
+
+config:
+  cluster_name: Mycluster
+  cluster_datacenter: Bengaluru
+  listen_address:
+  seed_count: 1
+  seeds:
+  cluster_domain: cluster.local
+  network: 
+  SS_CASSANDRA_SETUP_FIREWALL_RULES: false
+  ETCDCTL_KEY_FILE: /etc/etcd/ssl/etcd-client-key.pem
+  ETCDCTL_CERT_FILE: /etc/etcd/ssl/etcd-client.pem
+  ETCDCTL_CA_FILE: /etc/etcd/ssl/ca.pem
+  cassandra_datadir: CASSANDRA_DD
+  use_etcd: nouse 
+  cassandra_superuser: suadmincass
+  ## Specify password for user
+  ## Defaults to a random 20-character alphanumeric string if not set 
+  ## Must be base 64 encoded.
+  cassandra_superpass: eXRfeGszOWI=
+
+  ## Parameters to set the minimum configuration
+  RPC_SERVER_TYPE: hsha 
+  CONCURRENT_READS: 4 
+  CONCURRENT_WRITES: 4 
+  COMPACTION_THROUGHPUT: 0 
+  CONCURRENT_COMPACTORS: 1 
+  RPC_MIN_THREADS: 4 
+  RPC_MAX_THREADS: 4 
+  KEY_CACHE_SIZE: 32 
+
+  
+  traceLevel: error              # TraceLevel supported values- trace, info, warn, error      
+  logRetention: 2                # No of days for which log files shall be stored in the microservice
+  logPath: /opt/log              # Path where logs will be stored
+  mountPath: /opt/db/            # Mount Path
+  metaDataFilesPath: /opt/MetaData
+  metaDataPort: 8888
+  replicationFactor: 3           # Do Not Change
+  consistencyLevel: LOCAL_QUORUM # Do Not Change
+  sleepTime: 2                
+  TTL: 7200                     # TimeToLive in seconds
+  batchInsertCount: 10
+  MapMaxLength: 4
+
+  ports:
+    cql: 9042
+    eventdb: 8080    
+    nodePort: 32444
+
+## liveness probe config
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+livenessProbe:
+  initialDelaySeconds: 100
+  periodSeconds: 30
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+  commandOverridesEnabled: false
+  commandOverrides: '[ "/bin/sh", "-c", "[ -f /opt/cass-tools/.lcm_scalein ] || [ -f /opt/cass-tools/.lcm_cassandra_superpass ] || /opt/cassandra/bin/nodetool status" ]'
+
+## readiness probe config
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+readinessProbe:
+  initialDelaySeconds: 100
+  periodSeconds: 30
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+  commandOverridesEnabled: false
+  commandOverrides: '[ "/bin/sh", "-c", "[ -f /opt/cass-tools/.lcm_scalein ] || [ -f /opt/cass-tools/.lcm_cassandra_superpass ] || /opt/cassandra/bin/nodetool status | grep -E \"^UN\\s+${POD_IP}\"" ]'
+
+###
+### Adminstration related container and Job parameters and 
+###
+admin:
+  image:
+    registry: 
+    repository: csf/kubectl
+    csfTag: "v1.12.3"
+    pullPolicy: Always
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 100m
+
+  ## Exposes the hook-delete-policy.  By default, this is set to delete the
+  ## hooks only upon success.  In helm v2.9+, this should be set to
+  ## before-hook-creation.  This can also be unset to avoid hook deletion
+  ## for troubleshooting and debugging purposes
+  hook_delete_policy: "hook-succeeded, before-hook-creation"
+
+## LCM parameters
+lcm:
+  heal_tag: none
+
+###---------------------------
+### CBUR Parameters
+###---------------------------
+
+cbur:
+  enabled: false
+  ## defines the backup storage options, i.e. local, NetBackup, S3, Avamar.
+  backendMode: local
+  ## allows user to schedule backups
+  cronSpec: "0 0 * * *"
+  ## defines backup behavior for statefulsets
+  brOption: 2
+  ## defines how many backup copies should be saved
+  maxiCopy : 5
+  
+  image:
+    registry: 
+    repository: csf/cbura
+    csfTag: "1.0.3-871"
+    pullPolicy: Always
+
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+    runAsGroup: 1000
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 100m
+
+###---------
+### metrics
+###---------
+
+metrics:
+  enabled: false
+  annotate_service: false
+
+  agent:
+    name: cassandra-exporter-agent
+    version: 0.9.5
+
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9500"
+
+# Use host host network for Cassandra pods
+# Requires passing seed list into config.seeds
+hostNetwork: false
+
+istio:
+  enabled: false
+
+NetworkPolicy:
+  Enabled: false
+  AllowExternal: true
+
+eventdb:
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 8192Mi
+      cpu: 3000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+

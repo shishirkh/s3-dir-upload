@@ -1,0 +1,95 @@
+#post upgrade script is added to migrate searchguard index from v6 to v7.
+#SG Migrate requires SG-6 config files and it will migrate all the users, roles etc created in Sg-6 to SG-7.
+#Since helm upgrade deletes the old SG-6 configmap(cm), in pre-upgrade the old SG-6 configmap will be saved.
+#In post upgrade the newly created SG-7 cm will be deleted and old Sg-6 cm backup which is taken in pre-upgrade will be used to create the SG-6 cm.
+#SG-6 cm will require some time to get reflected inside the client  pod.
+#So added some sleep and migrate-sg script will be run in any client pod which has all SG-6 configuration data inside it.
+#So on the successfully migrated pod, all the configuration files are copied into the kubectl container's /tmp directory.
+#From /tmp of kubectl container new SG-7 cm is created.
+{{- if .Values.searchguard.enable }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "fullname" . }}-postupgrade-sg-job
+  labels:
+    app: {{ template "name" . }}
+  annotations:
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ template "name" . }}
+    spec:
+      serviceAccountName: {{ template "fullname" . }}-es-sa
+      restartPolicy: Never
+      volumes:
+      - name: kubectl
+        hostPath:
+          path: /usr/local/bin/kubectl
+      containers:
+      - name: upgrade-sg-job
+        image: "{{ .Values.global.registry1 }}/{{ .Values.kubectl.image.repo }}:{{ .Values.kubectl.image.tag }}"
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop:
+              - all
+        volumeMounts:
+        - name: kubectl
+          mountPath: /kubectl
+        resources:
+{{ toYaml .Values.jobResources | indent 10 }}
+        command:
+        - sh
+        - "-c"
+        - |
+          kubectl get cm elk-version-check --namespace {{ .Release.Namespace }}
+          if [ $? -eq 0 ]; then
+            kubectl get cm {{ template "fullname" . }}-searchguard-config-6 --namespace {{ .Release.Namespace }} -o yaml > /tmp/sg-6-cm.yml
+            kubectl delete cm {{ template "fullname" . }}-searchguard-config-6 --namespace {{ .Release.Namespace }}
+            
+            cd /tmp
+            var=$(grep name: sg-6-cm.yml) && sed -i "s/$var/${var::-2}/g" sg-6-cm.yml
+            sleep 5
+            kubectl delete cm {{ template "fullname" . }}-searchguard-config --namespace {{ .Release.Namespace }}
+            kubectl create -f sg-6-cm.yml
+            sleep 60
+            while true
+            do
+              sleep 30
+              for pod_id in $(kubectl get pods  --namespace {{ .Release.Namespace }} -l role=client,component=elasticsearch --no-headers=true | grep Running | grep {{ .Release.Name }} | sort -r |  awk '{ print$1 }')
+              do
+               sleep 30
+               kubectl exec -it ${pod_id} --namespace {{ .Release.Namespace }} -- grep -ir "config_version" /usr/share/elasticsearch/plugins/search-guard-7/sgconfig/sg_internal_users.yml
+               if [ $? -ne 0 ]; then
+                sleep 3
+                kubectl exec -it ${pod_id} --namespace {{ .Release.Namespace }} -- /etc/elasticsearch/migrate-sg.sh
+                kubectl exec -it ${pod_id} --namespace {{ .Release.Namespace }} -- [ -d /usr/share/elasticsearch/sg_migrate/v7 ]
+                if [ $? -eq 0 ]; then
+                   echo "------------------- Success pod ---------------------"
+                   success_pod=$pod_id
+                   break
+                fi
+               else
+                echo "Waiting for configmap to be updated"
+               fi
+              done
+              if [[ -v success_pod ]]; then
+                break;
+              fi
+            done
+            kubectl cp {{ .Release.Namespace }}/$success_pod:/usr/share/elasticsearch/sg_migrate/v7 /tmp/
+            kubectl delete cm {{ template "fullname" . }}-searchguard-config --namespace {{ .Release.Namespace }}
+            kubectl create configmap {{ template "fullname" . }}-searchguard-config --from-file=/tmp/sg_action_groups.yml --from-file=/tmp/sg_config.yml --from-file=/tmp/sg_internal_users.yml --from-file=/tmp/sg_roles_mapping.yml --from-file=/tmp/sg_roles.yml --from-file=/tmp/sg_tenants.yml --namespace {{ .Release.Namespace }}
+            kubectl delete cm elk-version-check --namespace {{ .Release.Namespace }}
+          fi
+
+{{- end }}
+
+

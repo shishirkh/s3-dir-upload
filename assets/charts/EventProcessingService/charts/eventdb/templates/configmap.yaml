@@ -1,0 +1,294 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmap.name }}
+  labels:
+    app: {{ .Values.configmap.labels.app }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/dev/null"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+          protocol: TCP
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+      - name: app
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8888
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.MetaDataStore.v1.MetaDataStore/Read"
+                    route:
+                      cluster: metadatastore
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 3600
+                    decorator:
+                      operation: app                  
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/dev/null"
+              generate_request_id: true
+      - name: alarmapp
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 6061
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService/RaiseEvent"
+                    route:
+                      cluster: eventreceiver
+                      timeout:
+                        seconds: 3600
+                    decorator:
+                      operation: app                  
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyalarmcountereventdb.log"
+              generate_request_id: true
+
+      - name: outsidecontainerapp
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              stream_idle_timeout: 0s
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.MetaDataStore.v1.MetaDataStore/Read"
+                    route:
+                      cluster: metadatastore
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app                                  
+                  - match:
+                      prefix: "/api/alarms/" #need to modify
+                    route:
+                      cluster: eventdbrest
+                      max_grpc_timeout : "0.000s"
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/" #need to modify
+                    route:
+                      cluster: eventdb
+                      max_grpc_timeout : "0.000s"
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/dev/null"
+              generate_request_id: true
+      clusters:
+      - name: eventdb
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: {{ default "8989" .Values.image.eventdb.port }}
+            protocol: TCP
+        http2_protocol_options: {}
+      - name: eventdbrest
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: {{ default "9070" .Values.image.eventdb.restPort }}
+            protocol: TCP
+        
+      - name: metadatastore
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: metadatastore-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}           
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}      
+      - name: logreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: logreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: eventreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}

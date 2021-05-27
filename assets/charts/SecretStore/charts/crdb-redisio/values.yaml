@@ -1,0 +1,287 @@
+---
+global:
+  imageRegistry: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+  metadata_max_release: "19.0"
+  metadata_min_release: "0.5SP1"
+  vnftype: "ZTS"
+  clustername: "zts1"
+
+  jobhookenable: true
+  jobtimeout: 300
+  prerestore: 0
+  postrestore: 0
+
+name:
+ podname: "secretstore-crdb"
+image:
+  server:
+    dockerTag: "2.7-2.1044"
+    pullPolicy: IfNotPresent
+  sentinel:
+    dockerTag: "2.7-2.1044"
+    pullPolicy: IfNotPresent
+  rolemon:
+    dockerTag: "2.7-2.1044"
+    pullPolicy: IfNotPresent
+  admin:
+    dockerTag: "2.7-2.1044"
+    pullPolicy: IfNotPresent
+  cbura:
+    dockerTag: "1.0.3-983"
+    pullPolicy: IfNotPresent
+## RBAC enabled flag
+rbacEnabled: true
+
+## CRDB-Redisio Parameters
+common:
+  # The master group name for identifying this set of servers within sentinel
+  # If not specified, the chart release will be used
+  groupName:
+
+  # Auth security, set to a b64-encoded password
+  # If not set, a random password will be generated
+  # To disable security, set to none
+  password:
+
+services:
+  # Indicates the service Type of the redis database
+  redis:
+    type: ClusterIP
+    port: 6379
+    # If using type: NodePort, can indicate specific port(s) to use
+    # nodePort:
+    # nodePortReadOnly:
+  # Indicates the service Type of the sentinels
+  sentinel:
+    type: ClusterIP
+    port: 26379
+    # If using type: NodePort, can indicate specific port(s) to use
+    # nodePort:
+
+server:
+  image:
+    name: "crdb/redisio"
+    #tag: "2.7-2.1044"
+    #pullPolicy: IfNotPresent
+  debug: true
+  # Number of Redis server instances to run
+  count: 3
+  logLevel: "verbose"
+  numDatabases: 16
+
+  # If set to true, the working directory where Redis saves the database will use
+  # a tmpfs-backed emptyDir volume instead of the persistent volume (PVC).
+  # IMPORTANT: When this is enabled, there is no persistent storage of the database
+  #            and data loss is highly likely in failure scenarios and node reboots.
+  # IMPORTANT: When this is enabled, the memory usage of the server pod(s) will
+  #            be doubled from the perspective of Kubernetes as the database is
+  #            stored twice in memory.  The size of the tmpfs volume will be limited
+  #            to half the server memory limit
+  tmpfsWorkingDir: false
+
+  # Persistence
+  # IMPORTANT: Regardless if the database is being stored on persistent storage,
+  #            a persistent volume is still required for retaining configuration.
+  #            The size can be extremely small if the database is not being stored
+  persistence:
+    enabled: false
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: "glusterfs-storageclass"
+    resourcePolicy: delete
+    preservePvc: false
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1024Mi
+      cpu: 1000m
+
+  # Can be used to direct the server pods to a specific node or limited set of nodes
+  nodeSelector:
+    #is_worker: "true"
+
+  # Redis server configuration parameters to include in the server.conf file
+  # IMPORTANT: Any parameters set here are subject to being overwritten by dynamic
+  #            configuration changes.  This can cause unexpected behavior as 
+  #            subsequent changes to the following value can trigger update
+  #            configuration lifecycle event handling yet not actually apply to
+  #            the real, runtime configuration.
+  confInclude: |
+
+  # Metrics scraper/exporter sidecar for Server
+  metrics:
+    enabled: false
+
+    image:
+      name: "oliver006/redis_exporter"
+      tag: "v1.1.1"
+      pullPolicy: IfNotPresent
+
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9121"
+
+    # additional arguments to include to the image commandline
+    argsInclude: 
+
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 250m
+      limits:
+        memory: 64Mi
+        cpu: 250m
+
+  dashboard:
+    enabled: true
+    label:
+      grafana_dashboard: "yes"
+      
+
+sentinel:
+  enabled: true
+  debug: true
+  image:
+    name: "crdb/redisio"
+    # If not specified, will use same as server
+    tag:
+    pullPolicy:
+
+  #
+  # IMPORTANT: A majority of sentinels must be working and communicating to actually
+  #            perform the failover, regardless of the quorum value. In other words,
+  #            a quorum must agree on master=down; but a majority is required to do
+  #            something about it.
+  #
+  # Number of Redis sentinels to run - minimum 3
+  count: 3
+
+  # Number of sentinels that must agree on a master as down to perform failover
+  quorum: 2
+
+  downAfterMilliseconds: 5000
+  failoverTimeout: 30000
+  parallelSyncs: 1
+
+  # Persistence
+  # IMPORTANT: Regardless if the database is being stored on persistent storage,
+  #            a persistent volume is still required for retaining configuration.
+  #            The size can be extremely small if the database is not being stored
+  persistence:
+    enabled: false
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: "glusterfs-storageclass"
+    resourcePolicy: delete
+    preservePvc: false
+
+  # Can be used to direct the server pods to a specific node or limited set of nodes
+  nodeSelector:
+    #is_edge: "true"
+
+  clientPort: 26379
+  
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1024Mi
+      cpu: 1000m
+
+  # Redis sentinel configuration parameters to include in the server.conf file
+  # IMPORTANT: Any parameters set here are subject to being overwritten by dynamic
+  #            configuration changes.  This can cause unexpected behavior as 
+  #            subsequent changes to the following value can trigger update
+  #            configuration lifecycle event handling yet not actually apply to
+  #            the real, runtime configuration.
+  confInclude: |
+
+  # Metrics scraper/exporter sidecar for Sentinel
+  # IMPORTANT: This is apparently not supported (yet?) by the redis_exporter.
+  #            Disabling by default, and this should probably not be enabled
+  #            until/if redis_exporter adds support for sentinel.
+  metrics:
+    enabled: false
+
+    image:
+      # If not specified, will use same as server.metrics
+      name:
+      tag:
+      pullPolicy:
+   
+    # additional arguments to include to the image commandline
+    argsInclude: 
+
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 250m
+      limits:
+        memory: 64Mi
+        cpu: 250m
+
+rolemon:
+  image:
+    name: "crdb/rolemon"
+    # If not specified, will use same as server
+    tag:
+    pullPolicy:
+  debug: true
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 100m
+    limits:
+      memory: 1024Mi
+      cpu: 1000m
+
+admin:
+  image:
+    name: "crdb/admin"
+    # If not specified, will use same as server
+    tag:
+    pullPolicy:
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+  hookDeletePolicy: "hook-succeeded"
+  #debug: true
+
+  # Post-instlal hook job essentially waits for all pods/containers to be ready
+  # This behavior can be disabled by setting to false
+  postInstall:
+    enabled: true
+
+## Backup/Recovery via CBUR
+cbur:
+  enabled: true
+
+  image:
+    name: "cbur/cbura"
+    #tag: "1.0.3-983"
+    #pullPolicy:
+
+  securityContext:
+    runAsUser:
+    runAsGroup:
+
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+  backend:
+    mode: AVAMAR

@@ -1,0 +1,356 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmap.name }}
+  labels:
+    app: {{ .Values.configmap.labels.app }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/var/DebugTrace/EnvoySideCar/envoyaccess.log"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+          protocol: TCP
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+      - name: splunksvrlistener
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 9091
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: splunksvrlistener
+              cluster: splunksvrforlog
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoySplunkServer.log"
+      - name: sftpserverlistener
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 9092
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: sftpserverlistener
+              cluster: sftpserverforlog
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyLogAgentSftpServer.log"
+      - name: app
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8888
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: app
+                virtual_hosts:
+                - name: app
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/EPSSettings.EPSSettingsProvider/"
+                    route:
+                      cluster: integrationservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/EPSSettings.ZTSSettingsProvider/"
+                    route:
+                      cluster: integrationservice
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/nokia.ztsl.EventDB.v1.EventDB/GetProcessedEvent"
+                    route:
+                      cluster: logdb
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: nontlslistenerlogagent
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  - match:
+                      prefix: "/nokia.ztsl.EventDB.v1.EventDB/Create"
+                    route:
+                      cluster: logdb
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoylogreciever.log"
+              generate_request_id: true
+      - name: insidecontainerapp
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: insidecontainer
+              route_config:
+                name: insidecontainer
+                virtual_hosts:
+                - name: insidecontainer
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.EventDB.v1.EventDB/Create"
+                    route:
+                      cluster: logdb
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: insidecontainer
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 15552000
+                    decorator:
+                      operation: insidecontainer
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-insidecontainer
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoylogreciever.log"
+              generate_request_id: true
+      - name: appeps
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 6061
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: appeps
+                virtual_hosts:
+                - name: appeps
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: epsserver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: appeps
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/dev/stdout"
+              generate_request_id: true
+      clusters:
+      - name: logreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 6611
+            protocol: TCP
+        http2_protocol_options: {}
+      - name: logdb
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: logdb-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: integrationservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: {{ .Values.consulagent.consulAgentDnsIpInt }}
+            port_value: {{ .Values.consulagent.consulAgentDnsPortInt }}
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: integration-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: sftpserverforlog ###################################################### sftpserverforlog #############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: ztslenvoylb-serviceint-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8091
+            protocol: TCP
+
+      - name: splunksvrforlog ###################################################### splunksvrforlog #############################################################################
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: ztslenvoylb-serviceint-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8092
+            protocol: TCP
+            
+      - name: epsserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}

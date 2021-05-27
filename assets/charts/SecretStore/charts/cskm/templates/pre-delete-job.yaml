@@ -1,0 +1,110 @@
+{{- if .Values.rbac.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.name.podname }}-predeleteadmin
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ .Values.name.podname }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": hook-succeeded, hook-failed
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: "{{.Release.Namespace}}"
+  name: {{ .Values.name.podname }}-predeleterole
+  labels:
+    app: {{ .Values.name.podname }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-7"
+    "helm.sh/hook-delete-policy": hook-succeeded, hook-failed
+rules:
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ .Values.name.podname }}-predeleterolebinding
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ .Values.name.podname }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook-delete-policy": hook-succeeded, hook-failed
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.name.podname }}-predeleteadmin
+  namespace: "{{.Release.Namespace}}"
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ .Values.name.podname }}-predeleterole
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Release.Name }}-pre-delete-job"
+  labels:
+    app: {{ .Values.name.podname }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded, hook-failed
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      {{- if .Values.rbac.create }}
+      serviceAccountName: {{ .Values.name.podname }}-predeleteadmin
+      securityContext:
+        runAsUser: {{ default 1000 .Values.cbur.securityContext.runAsUser }}
+        runAsGroup:  {{ default 1000 .Values.cbur.securityContext.runAsGroup }}
+        fsGroup: {{ default 1000 .Values.cbur.securityContext.fsGroup }}
+      {{- end }}
+      containers:
+      - name: pre-delete-secrets
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.kubectl.imageRepo }}:{{ .Values.image.kubectl.dockerTag }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        command: 
+        - sh
+        - -c
+        - |
+          echo 'Pre delete for release: {{ .Release.Name }}'
+          echo 'Delete CSKM secret'
+          echo 'kubectl delete secrets -l app={{ .Values.name.podname }}-secret,release={{ .Release.Name }} --namespace={{ .Release.Namespace }}'
+          kubectl delete secrets -l app={{ .Values.name.podname }}-secret,release={{ .Release.Name }} --namespace={{ .Release.Namespace }}
+          {{- if (not (.Values.preserve_cskm_pvc)) }}
+          echo 'Delete CSKM PVC because preserve_cskm_pvc is set to false'
+          echo 'kubectl delete pvc -l app={{ .Values.name.podname }},release={{ .Release.Name }} --namespace={{ .Release.Namespace }}'
+          kubectl delete pvc -l app={{ .Values.name.podname }},release={{ .Release.Name }} --namespace={{ .Release.Namespace }}
+          {{- end }}
+          echo 'Waiting 5 seconds before job cleanup'
+          sleep 5
+          exit 0
+        resources:
+          requests:
+            memory: {{ .Values.initBusyBoxContainer.resources.requests.memory | default "256Mi" | quote }}
+            cpu: {{ .Values.initBusyBoxContainer.resources.requests.cpu | default "250m" | quote }}
+          limits:
+            memory: {{ .Values.initBusyBoxContainer.resources.limits.memory | default "256Mi" | quote }}
+            cpu: {{ .Values.initBusyBoxContainer.resources.limits.cpu | default "250m" | quote }} 

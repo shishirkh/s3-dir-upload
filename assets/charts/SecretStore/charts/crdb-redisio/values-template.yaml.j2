@@ -1,0 +1,196 @@
+---
+global:
+  registry: {{ cluster.redisioImageRegistry | default(model.properties.cluster.properties.redisioImageRegistry.default) }}
+
+## RBAC enabled flag
+rbacEnabled: {{ (rbac | default("")).enabled | default(model.properties.rbac.properties.enabled.default) }}
+
+## CRDB-Redisio Parameters
+common:
+  # The master group name for identifying this set of servers within sentinel
+  # If not specified, the chart release will be used
+  groupName:
+
+  # Auth security, set to a b64-encoded password
+  # If not set, a random password will be generated
+  # To disable security, set to none
+  {% if cluster.redisPassword is defined %}
+  password: {{ cluster.redisPassword | b64encode }}
+  {% endif %}
+
+services:
+  # Indicates the service Type of the redis database
+  redis:
+    type: ClusterIP
+    port: 6379
+  # Indicates the service Type of the sentinels
+  sentinel:
+    type: ClusterIP
+    port: 26379
+
+server:
+  image:
+    name: {{ cluster.redisioServerImageName | default(model.properties.cluster.properties.redisioServerImageName.default) }}
+    tag: {{ cluster.redisioServerImageTag | default(model.properties.cluster.properties.redisioServerImageTag.default) }}
+    pullPolicy: {{ cluster.redisioServerImagePullPolicy | default(model.properties.cluster.properties.redisioServerImagePullPolicy.default) }}
+
+  # Number of Redis server instances to run
+  count: {{ cluster.serverCount | default(model.properties.cluster.properties.serverCount.default) }}
+  logLevel: "verbose"
+  numDatabases: {{ cluster.numDatabases | default(model.properties.cluster.properties.numDatabases.default) }}
+
+  # If set to true, the working directory where Redis saves the database will use
+  # a tmpfs-backed emptyDir volume instead of the persistent volume (PVC).
+  # IMPORTANT: When this is enabled, there is no persistent storage of the database
+  #            and data loss is highly likely in failure scenarios and node reboots.
+  # IMPORTANT: When this is enabled, the memory usage of the server pod(s) will 
+  #            be doubled from the perspective of Kubernetes as the database is 
+  #            stored twice in memory.  The size of the tmpfs volume will be limited
+  #            to half the server memory limit
+  tmpfsWorkingDir: {{ (resources | default("")).serverTmpfsWorkingDir | default(model.properties.resources.properties.serverTmpfsWorkingDir.default) }}
+
+  # Persistence
+  # IMPORTANT: Regardless if the database is being stored on persistent storage,
+  #            a persistent volume is still required for retaining configuration.
+  #            The size can be extremely small if the database is not being stored
+  persistence:
+    #enabled: true
+    accessMode: ReadWriteOnce
+    size: {{ (resources | default("")).volumeSize | default(model.properties.resources.properties.volumeSize.default) }}
+    storageClass: {{ (resources | default("")).storageClass | default(model.properties.resources.properties.storageClass.default) }}
+    resourcePolicy: delete
+    preservePvc: false
+
+  resources:
+    requests:
+      memory: {{ (resources | default("")).serverRequestsMemory | default(model.properties.resources.properties.serverRequestsMemory.default) }}
+      cpu: {{ (resources | default("")).serverRequestsCpu | default(model.properties.resources.properties.serverRequestsCpu.default) }}
+    limits:
+      memory: {{ (resources | default("")).serverLimitsMemory | default(model.properties.resources.properties.serverLimitsMemory.default) }}
+      cpu: {{ (resources | default("")).serverLimitsCpu | default(model.properties.resources.properties.serverLimitsCpu.default) }}
+
+  # Redis server configuration parameters to include in the server.conf file
+  # IMPORTANT: Any parameters set here are subject to being overwritten by dynamic
+  #            configuration changes.  This can cause unexpected behavior as 
+  #            subsequent changes to the following value can trigger update
+  #            configuration lifecycle event handling yet not actually apply to
+  #            the real, runtime configuration.
+  confInclude: |
+
+sentinel:
+  {% if (cluster.serverCount | default(model.properties.cluster.properties.serverCount.default)) > 1 %}
+  enabled: true
+  {% else %}
+  enabled: false
+  {% endif %}
+
+  image:
+    name: {{ cluster.redisioSentinelImageName | default(model.properties.cluster.properties.redisioSentinelImageName.default) }}
+    tag: {{ cluster.redisioSentinelImageTag | default(model.properties.cluster.properties.redisioSentinelImageTag.default) }}
+    pullPolicy: {{ cluster.redisioSentinelImagePullPolicy | default(model.properties.cluster.properties.redisioSentinelImagePullPolicy.default) }}
+
+  #
+  # IMPORTANT: A majority of sentinels must be working and communicating to actually
+  #            perform the failover, regardless of the quorum value. In other words,
+  #            a quorum must agree on master=down; but a majority is required to do
+  #            something about it.
+  #
+  # Number of Redis sentinels to run - minimum 3
+  count: {{ cluster.sentinelCount | default(model.properties.cluster.properties.sentinelCount.default) }}
+
+  # Number of sentinels that must agree on a master as down to perform failover
+  quorum: {{ cluster.sentinelQuorum | default(model.properties.cluster.properties.sentinelQuorum.default) }}
+
+  downAfterMilliseconds: {{ cluster.sentinelDownAfterMillis | default(model.properties.cluster.properties.sentinelDownAfterMillis.default) }}
+  failoverTimeout: {{ cluster.sentinelFailoverTimeout | default(model.properties.cluster.properties.sentinelFailoverTimeout.default) }}
+  parallelSyncs: {{ cluster.sentinelParallelSyncs | default(model.properties.cluster.properties.sentinelParallelSyncs.default) }}
+
+  # Persistence
+  # IMPORTANT: Regardless if the database is being stored on persistent storage,
+  #            a persistent volume is still required for retaining configuration.
+  #            The size can be extremely small if the database is not being stored
+  persistence:
+    #enabled: true
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: {{ (resources | default("")).storageClass | default(model.properties.resources.properties.storageClass.default) }}
+    resourcePolicy: delete
+    preservePvc: false
+
+  clientPort: 26379
+  
+  resources:
+    requests:
+      memory: {{ (resources | default("")).sentinelRequestsMemory | default(model.properties.resources.properties.sentinelRequestsMemory.default) }}
+      cpu: {{ (resources | default("")).sentinelRequestsCpu | default(model.properties.resources.properties.sentinelRequestsCpu.default) }}
+    limits:
+      memory: {{ (resources | default("")).sentinelLimitsMemory | default(model.properties.resources.properties.sentinelLimitsMemory.default) }}
+      cpu: {{ (resources | default("")).sentinelLimitsCpu | default(model.properties.resources.properties.sentinelLimitsCpu.default) }}
+
+  # Redis sentinel configuration parameters to include in the server.conf file
+  # IMPORTANT: Any parameters set here are subject to being overwritten by dynamic
+  #            configuration changes.  This can cause unexpected behavior as 
+  #            subsequent changes to the following value can trigger update
+  #            configuration lifecycle event handling yet not actually apply to
+  #            the real, runtime configuration.
+  confInclude: |
+
+rolemon:
+  image:
+    name: {{ cluster.redisioRolemonImageName | default(model.properties.cluster.properties.redisioRolemonImageName.default) }}
+    tag: {{ cluster.redisioRolemonImageTag | default(model.properties.cluster.properties.redisioRolemonImageTag.default) }}
+    pullPolicy: {{ cluster.redisioRolemonImagePullPolicy | default(model.properties.cluster.properties.redisioRolemonImagePullPolicy.default) }}
+
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 250m
+    limits:
+      memory: 64Mi
+      cpu: 250m
+
+admin:
+  image:
+    name: {{ cluster.redisioAdminImageName | default(model.properties.cluster.properties.redisioAdminImageName.default) }}
+    tag: {{ cluster.redisioAdminImageTag | default(model.properties.cluster.properties.redisioAdminImageTag.default) }}
+    pullPolicy: {{ cluster.redisioAdminImagePullPolicy | default(model.properties.cluster.properties.redisioAdminImagePullPolicy.default) }}
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+  hookDeletePolicy: "hook-succeeded"
+  #debug: true
+
+  # Post-instlal hook job essentially waits for all pods/containers to be ready
+  # This behavior can be disabled by setting to false
+  postInstall:
+    enabled: true
+
+## Backup/Recovery via CBUR
+cbur:
+  enabled: {{ (cbur | default("")).enabled | default(model.properties.cbur.properties.enabled.default) }}
+
+  image:
+    name: {{ cbur.redisioCburaImageName | default(model.properties.cbur.properties.redisioCburaImageName.default) }}
+    tag: {{ cbur.redisioCburaImageTag | default(model.properties.cbur.properties.redisioCburaImageTag.default) }}
+    pullPolicy: {{ cbur.redisioCburaImagePullPolicy | default(model.cbur.cluster.properties.redisioCburaImagePullPolicy.default) }}
+
+  securityContext:
+    runAsUser:
+    runAsGroup:
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 100m
+
+  backend:
+    mode: local

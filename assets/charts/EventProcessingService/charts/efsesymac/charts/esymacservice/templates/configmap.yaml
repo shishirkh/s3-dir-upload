@@ -1,0 +1,494 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmap.name }}
+  labels:
+    app: {{ .Values.configmap.labels.app }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/dev/null"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+          protocol: TCP
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+      - name: app
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 7070
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: esymac
+              cluster: esymacservice
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/inesymacservice.log"
+                  
+      - name: apptls
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 7071
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: esymactls
+              cluster: esymacservicetls
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/inesymacservicetls.log"
+
+      - name: appepsalarm
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 6061
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: appepsalarm
+                virtual_hosts:
+                - name: appepsalarm
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService/RaiseEvent"
+                    route:
+                      cluster: eventreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: appepsalarm                  
+                  - match:
+                      prefix: "/esymacscale.VNFDiscoveryService/"
+                    route:
+                      cluster: efsmonitor
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: appepsalarm
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/appepsalarm.log"
+              generate_request_id: true               
+      - name: appesymacagent
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8888
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: appesymacagent
+              route_config:
+                name: appesymacagent
+                virtual_hosts:
+                - name: appesymacagent
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.EventDB.v1.EventDB/"
+                    route:
+                      cluster: eventdb
+                      timeout:
+                        seconds: 15552000
+                    decorator:
+                      operation: appesymacagent
+                  - match:
+                      prefix: "/nokia.ztsl.MetaDataStore.v1.MetaDataStore/Read"
+                    route:
+                      cluster: metadatastore
+                      timeout:
+                        seconds: 15552000
+                    decorator:
+                      operation: appesymacagent
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: app                     
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyesymacagent.log"
+      
+      - name: appesymacagentpm
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8889
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: appesymacagent
+              route_config:
+                name: appesymacagentpm
+                virtual_hosts:
+                - name: appesymacagentpm
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.EventDB.v1.EventDB/"
+                    route:
+                      cluster: eventdbpm
+                      timeout:
+                        seconds: 15552000
+                    decorator:
+                      operation: appesymacagentpm              
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyesymacagentpm.log"
+
+
+      - name: appesymacagentfm
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8887
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: appesymacagent
+              route_config:
+                name: appesymacagentfm
+                virtual_hosts:
+                - name: appesymacagentfm
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.EventDB.v1.EventDB/"
+                    route:
+                      cluster: eventdbfm
+                      timeout:
+                        seconds: 15552000
+                    decorator:
+                      operation: appesymacagentpm              
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyesymacagentfm.log"
+
+
+
+      - name: appsquid 
+        address:
+          socket_address:
+           address: 127.0.0.1
+           port_value: 9090
+           protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: squid
+              cluster: appsquidenvoylb
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoynginx.log"
+ 
+      clusters:
+      - name: esymacservice
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8080
+            protocol: TCP
+
+      - name: esymacservicetls
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8443
+            protocol: TCP
+
+      - name: efsmonitor
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: efsmonitor-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+         common_tls_context:
+          tls_certificates:
+          - certificate_chain:
+              filename: "/certs/cert.pem"
+            private_key:
+              filename: "/certs/key.pem"
+        http2_protocol_options: {}    
+      - name: eventdb
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventdb-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: metadatastore
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: metadatastore-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: eventreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: appsquidenvoylb
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: ztslenvoylb-serviceint-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 3128
+            protocol: TCP
+
+      
+      - name: eventdbfm
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventdbfm-svc-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: eventdbpm
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 15552000
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventdbpm-svc-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+
+      - name: logreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: logreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+                trusted_ca:
+                  filename: "/certs/cacert.pem"
+        http2_protocol_options: {}          

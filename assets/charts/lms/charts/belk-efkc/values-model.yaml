@@ -1,0 +1,76 @@
+---
+# Model of efkc configuration.
+type: object
+properties:
+    fluentd:
+        description: |
+            Fluentd configuration.
+        type: object
+        properties:
+            cpu:
+                description: |
+                    fluentd is disbaled for tenant in compaas as this is installed as a infrastructure service
+                type: boolean
+                default: false
+                readonly: true
+    elasticsearch:
+        description: |
+            Elasticsearch cluster configuration.
+        type: object
+        properties:
+            replicasMaster:
+                description: |
+                    Number of master node replicas
+                type: integer
+                default: 1
+            cpuMaster:
+                description: |
+                    CPU usage for elasticsearch master per node
+                type: string
+                default: 1
+            memoryMaster:
+                description: |
+                    Memory usage elasticsearch master in MB per node
+                type: integer
+                default: 1024
+            replicasClient:
+                description: |
+                    Number of client node replicas
+                type: integer
+                default: 1
+            cpuClient:
+                description: |
+                    CPU usage for elasticsearch client per node
+                type: string
+                default: 500m
+            memoryClient:
+                description: |
+                    Memory usage elasticsearch client in MB per node
+                type: integer
+                default: 512
+            replicasData:
+                description: |
+                    Number of data node replicas
+                type: integer
+                default: 2
+            memoryData:
+                description: |
+                    Memory usage elasticsearch data in MB per node
+                type: integer
+                default: 1024
+            storageData:
+                description: |
+                    Persistent storage size per elasticsearch data node in GB
+                type: integer
+                default: 1
+    kibana:
+        description: |
+            Kibana configuration.
+        type: object
+        properties:
+            cpu:
+                description: |
+                    CPU usage for kibana
+                type: string
+                default: 500m
+

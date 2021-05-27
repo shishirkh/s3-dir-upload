@@ -1,0 +1,263 @@
+---
+# Model of configuration.
+type: object
+properties:
+    rbac:
+        description: RBAC configuration
+        type: object
+        properties:
+            enabled:
+                description: |
+                    Does your cluster have RBAC enabled?
+                type: boolean
+                default: true
+                title: RBAC Enabled
+    
+    cluster:
+        description: Cluster-level configuration of the database
+        type: object
+        properties:
+            redisioImageRegistry:
+                title: Docker Registry for Redis.io
+                description: The docker image registry name
+                type: string
+                default: csf-docker-delivered.repo.lab.pl.alcatel-lucent.com
+
+            redisPassword:
+                title: Redis Database Password
+                description: The password to the database
+                type: string
+                format: password
+
+            redisioServerImageName:
+                title: Redis.io Server Image Name
+                description: The container image name for the Redis.io server
+                type: string
+                default: crdb/redisio
+
+            redisioServerImageTag:
+                title: Redis.io Server Image Tag
+                description: The container image tag for the Redis.io server
+                type: string
+                default: 2.7-2.1044
+
+            redisioServerImagePullPolicy:
+                title: Redis.io Server Image Pull Policy
+                description: The container image pull policy for the Redis.io server
+                type: string
+                default: IfNotPresent
+
+            redisioRolemonImageName:
+                title: Redis.io Rolemon Image Name
+                description: The container image name for the Redis.io rolemon sidecar
+                type: string
+                default: crdb/rolemon
+
+            redisioRolemonImageTag:
+                title: Redis.io Rolemon Image Tag
+                description: The container image tag for the Redis.io rolemon sidecar (if not specified, will use same as server)
+                type: string
+                default: ""
+
+            redisioRolemonImagePullPolicy:
+                title: Redis.io Rolemon Image Pull Policy
+                description: The container image pull policy for the Redis.io rolemon sidecar (if not specified, will use same as server)
+                type: string
+                default: ""
+
+            serverCount:
+                title: Redis.io Server Count
+                description: The number of Redis.io server pods
+                type: integer
+                default: 3
+                minimum: 1
+                maximum: 9
+
+            redisioSentinelImageName:
+                title: Redis.io Sentinel Image Name
+                description: The container image name for the Redis.io sentinel
+                type: string
+                default: crdb/redisio
+
+            redisioSentinelImageTag:
+                title: Redis.io Sentinel Image Tag
+                description: The container image tag for the Redis.io sentinel (if not specified, will use same as server)
+                type: string
+                default: ""
+
+            redisioSentinelImagePullPolicy:
+                title: Redis.io Sentinel Image Pull Policy
+                description: The container image pull policy for the Redis.io sentinel (if not specified, will use same as server)
+                type: string
+                default: ""
+
+            sentinelCount:
+                title: Redis.io Sentinel Count
+                description: The number of Redis.io sentinel pods
+                type: integer
+                default: 3
+                minimum: 1
+                maximum: 9
+
+            sentinelDownAfterMillis:
+                title: Redis.io Sentinel Down After Milliseconds
+                description: The number of milliseconds before Sentinel considers an unreachable server as down
+                type: integer
+                default: 5000
+                minimum: 500
+                maximum: 60000
+
+            sentinelFailoverTimeout:
+                title: Redis.io Sentinel Failover Timeout
+                description: The number of milliseconds allowed for Sentinel failover
+                type: integer
+                default: 30000
+                minimum: 1000
+                maximum: 600000
+
+            sentinelQuorum:
+                title: Redis.io Sentinel Quorum
+                description: The number of Sentinels required for quorum
+                type: integer
+                default: 2
+                minimum: 1
+                maximum: 9
+
+            sentinelParallelSyncs:
+                title: Redis.io Sentinel Parallel Syncs
+                description: The number of parallel syncs allowed by Sentinel
+                type: integer
+                default: 1
+                minimum: 1
+                maximum: 8
+
+            redisioAdminImageName:
+                title: Redis.io Admin Image Name
+                description: The container image name for the Redis.io admin Jobs
+                type: string
+                default: crdb/admin
+
+            redisioAdminImageTag:
+                title: Redis.io Admin Image Tag
+                description: The container image tag for the Redis.io admin jobs (if not specified, will use same as server)
+                type: string
+                default: ""
+
+            redisioAdminImagePullPolicy:
+                title: Redis.io Admin Image Pull Policy
+                description: The container image pull policy for the Redis.io admin jobs (if not specified, will use same as server)
+                type: string
+                default: ""
+
+
+            numDatabases:
+                title: Number of Databases
+                description: The number of Redis databases
+                type: integer
+                default: 16 
+                minimum: 1
+                maximum: 100
+
+
+    resources:
+        description: Resource reservations, requests and limits
+        type: object
+        properties:
+            serverRequestsMemory:
+                title: Server Memory Requests
+                description: Memory size requested for each Redis.io server pod
+                type: string
+                default: 256Mi
+                pattern: '^([0-9]+(T|G|M)i?)$'
+            serverRequestsCpu:
+                title: Server CPU Requests
+                description: CPU requested for each Redis.io server pod
+                type: string
+                default: 250m
+                pattern: '^([0-9]+m?)$'
+            serverLimitsMemory:
+                title: Server Memory Limits
+                description: Memory size limit for each Redis.io server pod
+                type: string
+                default: 256Mi
+                pattern: '^([0-9]+(T|G|M)i?)$'
+            serverLimitsCpu:
+                title: Server CPU Limits
+                description: CPU limit for each Redis.io server pod
+                type: string
+                default: 250m
+                pattern: '^([0-9]+m?)$'
+
+            sentinelRequestsMemory:
+                title: Sentinel Memory Requests
+                description: Memory size requested for each Redis.io sentinel pod
+                type: string
+                default: 256Mi
+                pattern: '^([0-9]+(T|G|M)i?)$'
+            sentinelRequestsCpu:
+                title: Sentinel CPU Requests
+                description: CPU requested for each Redis.io sentinel pod
+                type: string
+                default: 250m
+                pattern: '^([0-9]+m?)$'
+            sentinelLimitsMemory:
+                title: Sentinel Memory Limits
+                description: Memory size limit for each Redis.io sentinel pod
+                type: string
+                default: 256Mi
+                pattern: '^([0-9]+(T|G|M)i?)$'
+            sentinelLimitsCpu:
+                title: Sentinel CPU Limits
+                description: CPU limit for each Redis.io sentinel pod
+                type: string
+                default: 250m
+                pattern: '^([0-9]+m?)$'
+
+            volumeSize:
+                title: Server Volume Size
+                description: Volume size for each Redis.io server pod persistent storage
+                type: string
+                default: 1Gi
+                pattern: '^([0-9]+(T|G|M)i?)$'
+
+            serverTmpfsWorkingDir:
+                description: Use tmpfs for backing database storage instead of PVC.  Only recommended for special cases where data is required to be not stored on persistent storage mediums.  Has significant impact on potential data loss.
+                type: boolean
+                default: false 
+                title: Use in-memory tmpfs for database working dir
+
+            storageClass:
+                title: Storage Class
+                description: Storage Class for persistent volumes
+                type: string
+                default: ""
+
+    cbur:
+        description: Backup configuration (CBUR)
+        type: object 
+        properties:
+            enabled:
+                description: Use cbur for data backup and restore?
+                type: boolean
+                default: true 
+                title: CBUR Enabled
+
+            redisioCburaImageName:
+                title: Redis.io CBURA Image Name
+                description: The container image name for the Redis.io backup sidecar
+                type: string
+                default: cbur/cbura
+
+            redisioCburaImageTag:
+                title: Redis.io CBURA Image Tag
+                description: The container image tag for the Redis.io backup sidecar (if not specified, will use same as server)
+                type: string
+                default: "1.0.3-983"
+
+            redisioCburaImagePullPolicy:
+                title: Redis.io CBURA Image Pull Policy
+                description: The container image pull policy for the Redis.io backup sidecar (if not specified, will use same as server)
+                type: string
+                default: ""
+
+

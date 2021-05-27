@@ -1,0 +1,14 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy IntegrationService in kubernets cluster
+engine: gotpl
+keywords:
+- IntegrationService
+- "20.0"
+- IntegrationService
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Main O&M Services", "SVC_NAME": "Integration Service",
+  "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+maintainers:
+- name: Nokia
+name: IntegrationService
+version: 1.5.37

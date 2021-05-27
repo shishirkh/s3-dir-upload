@@ -1,0 +1,28 @@
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: integration-internal-zts1
+  labels:
+    app: integration-internal-zts1
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  selector:
+    matchLabels:
+      app: integration-internal-zts1
+  volumes:
+  - multi-pv-storage
+  backend:
+    mode: AVAMAR
+  cronSpec: 0 0 * * *
+  k8sType: Deployment
+  brOption: 2
+  maxiCopy: 2
+  hooks:
+  - name: integration-internal-zts1
+    commands:
+      preBackupCmd: ["sh", "-c", "echo preBackupCmd > /tmp/preb.txt"]
+      postBackupCmd: ["sh", "-c", "echo post-backup > /tmp/posb.txt" ]
+      preRestoreCmd: ["sh", "-c", "echo preRestoreCmd > /tmp/prer.txt"]
+      postRestoreCmd: ["sh", "-c", "echo postRestoreCmd > /tmp/posr.txt"]
+

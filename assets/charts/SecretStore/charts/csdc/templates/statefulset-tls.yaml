@@ -1,0 +1,930 @@
+{{- if .Values.service.tls -}}      
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.name.podname }}
+  labels:
+    heritage: {{ .Release.Service | quote }}
+    app: {{ .Values.name.podname }}
+    release: {{ .Release.Name | quote }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    component: "{{ .Release.Name }}-{{ .Values.service.Component }}"
+spec:
+  selector:
+    matchLabels:
+      heritage: {{ .Release.Service | quote }}
+      app: {{ .Values.name.podname }}
+      release: {{ .Release.Name | quote }}
+      component: "{{ .Release.Name }}-{{ .Values.service.Component }}"
+  serviceName: {{ .Values.name.podname }}
+  replicas: {{ default 3 .Values.service.Replicas }}
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      name: {{ .Values.name.podname }}
+      labels:
+        heritage: {{ .Release.Service | quote }}
+        app: {{ .Values.name.podname }}
+        release: {{ .Release.Name | quote }}
+        chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+        component: "{{ .Release.Name }}-{{ .Values.service.Component }}"
+    spec:
+      securityContext:
+        fsGroup: 998
+        runAsUser: 999
+      serviceAccountName: {{ .Values.name.podname }}
+      terminationGracePeriodSeconds: {{ default 60 .Values.service.terminationGracePeriodSeconds }}
+      volumes:
+        - name: tmpdatavol
+          emptyDir: {}
+        - name: memorydatadir
+          emptyDir:
+            medium: Memory
+        - name: ca-config
+          configMap:
+            name: "sdc-ca-config"
+        - name: ca-cert
+          secret:
+            secretName: "sdc-ca-cert-secret"
+        - name: client-cert
+          secret:
+            secretName: "sdc-client-cert-secret"
+        {{- if .Values.service.user_defined_tls }}
+        - name: server-cert
+          secret:
+            secretName: "sdc-server-cert-secret"
+        - name: user-ca
+          secret:
+            secretName: "sdc-user-ca-secret"
+        {{- end }}
+      {{- with .Values.service.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      containers:
+      - name: {{ .Values.name.podname }}
+        {{- if .Values.global }}
+        {{- if .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.service.Image }}:{{ .Values.service.ImageTag }}"
+        {{- end }}
+        {{- else  }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.service.Image }}:{{ .Values.service.ImageTag }}"
+        {{- end }}
+        imagePullPolicy: "{{ .Values.service.ImagePullPolicy }}"
+        ports:
+        - containerPort: {{ .Values.service.PeerPort }}
+          name: peer
+        - containerPort: {{ .Values.service.ClientPort }}
+          name: client
+        resources:
+          limits:
+             cpu: {{.Values.service.resources.requests.Cpu }}
+             memory: {{.Values.service.resources.requests.Memory }}
+          requests:
+            cpu: {{ .Values.service.resources.requests.Cpu }}
+            memory: {{ .Values.service.resources.requests.Memory }}
+        env:
+        - name: INITIAL_CLUSTER_SIZE
+          value: {{ default 3 .Values.service.Replicas | quote }}
+        - name: SET_NAME
+          value: {{ .Values.name.podname }}
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+               fieldPath: status.podIP
+        {{- if .Values.service.RBAC }}
+        - name: RBAC_PWD
+          valueFrom:
+            secretKeyRef:
+              name: sdc-rbac-secret
+              key: rbac
+        {{- end }}
+        - name: user_defined_tls
+          value: {{ .Values.service.user_defined_tls | quote }} 
+        {{- if .Values.service.user_defined_tls }}
+        - name: SERVER_CLIENT_CA
+          value: "/var/run/etcd/tls/user-ca/..data/ca.pem"
+        - name: SERVER_CERT
+          value: "/var/run/etcd/tls/server-cert/..data/server.pem"
+        - name: SERVER_KEY
+          value: "/var/run/etcd/tls/server-cert/..data/server-key.pem"
+        {{- else }}
+        - name: SERVER_CLIENT_CA
+          value: "/var/run/etcd/tls/ca-cert/..data/ca.pem"
+        - name: SERVER_CERT
+          value: "/var/run/etcd/server.pem"
+        - name: SERVER_KEY
+          value: "/var/run/etcd/server-key.pem"
+        {{- end }}
+        volumeMounts:
+        - name: datadir
+          mountPath: /var/run/etcd
+        - name: memorydatadir
+          mountPath: /var/run/etcd/ramdisk
+        - name: tmpdatavol
+          mountPath: /tmpdatavol
+        - name: ca-config
+          mountPath: /var/run/etcd/tls/ca-config
+        - name: ca-cert
+          mountPath: /var/run/etcd/tls/ca-cert
+        - name: client-cert
+          mountPath: /var/run/etcd/tls/client-cert
+        {{- if .Values.service.user_defined_tls }}
+        - name: server-cert
+          mountPath: /var/run/etcd/tls/server-cert
+        - name: user-ca
+          mountPath: /var/run/etcd/tls/user-ca
+        {{- end }}
+        readinessProbe:
+          exec:
+            command:
+              - "/bin/sh"
+              - "-c"
+              - ls /tmp/ready
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+              - "/bin/sh"
+              - "-c"
+              - ETCDCTL_API=3 etcdctl --endpoints https://${MY_POD_IP}:{{ .Values.service.ClientPort }} --dial-timeout={{ .Values.service.DialTimeoutforclient }} --cert /var/run/etcd/tls/client-cert/..data/client.pem --key /var/run/etcd/tls/client-cert/..data/client-key.pem --cacert ${SERVER_CLIENT_CA} --user root:${RBAC_PWD} endpoint health
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          failureThreshold: 6
+        lifecycle:
+          preStop:
+            exec:
+              command:
+               - "/bin/sh"
+               - "-ec"
+               - |
+                 echo "null" > "/var/run/etcd/pod_ip"
+                 sleep 30s
+        command:
+          - "/bin/sh"
+          - "-c"
+          - |
+            rm -rf /tmp/ready
+            HOSTNAME=$(hostname)
+            ETCDCTL_DIAL_TIMEOUT={{ .Values.service.DialTimeoutforclient }}
+            WALDATADIR="/var/run/etcd/ramdisk/wal"
+            {{- if .Values.service.ramdiskAll }}
+            DATADIR="/var/run/etcd/ramdisk/db"
+            {{- else }}
+            DATADIR="/var/run/etcd/default.etcd"
+            {{- end }}
+            CERTFILE="--cert-file /var/run/etcd/tls/client-cert/..data/client.pem --key-file /var/run/etcd/tls/client-cert/..data/client-key.pem --ca-file ${SERVER_CLIENT_CA}"
+            CERTS="--cert /var/run/etcd/tls/client-cert/..data/client.pem --key /var/run/etcd/tls/client-cert/..data/client-key.pem --cacert ${SERVER_CLIENT_CA}"
+
+            # store member id into PVC for later member replacement
+            eps() {
+                EPS=""
+                for i in $(seq 0 $((${INITIAL_CLUSTER_SIZE} - 1))); do
+                    EPS="${EPS}${EPS:+,}https://${SET_NAME}-${i}.${SET_NAME}:{{ .Values.service.ClientPort }}"
+                done
+                echo ${EPS}
+            }
+            collect_member() {
+                while ! etcdctl --endpoints $(eps) $CERTFILE member list | grep ${HOSTNAME} &>/dev/null; do 
+                    etcdctl --endpoints $(eps) $CERTFILE member list &>> /var/run/etcd/debug
+                    sleep 1
+                done
+                etcdctl --endpoints $(eps) $CERTFILE member list | grep ${HOSTNAME} | cut -d ':' -f1 | cut -d '[' -f1 > /var/run/etcd/member_id
+                echo ${MY_POD_IP} > /var/run/etcd/pod_ip
+                exit 0
+            }
+
+            restore_collect_member() {
+                ep="https://${SET_NAME}-0.${SET_NAME}:{{ .Values.service.ClientPort }}"
+                while ! etcdctl --endpoints ${ep} $CERTFILE member list | grep ${HOSTNAME} &>/dev/null; do 
+                    etcdctl --endpoints ${ep} $CERTFILE member list &>> /var/run/etcd/debug
+                    sleep 1
+                done
+                etcdctl --endpoints ${ep} $CERTFILE member list | grep ${HOSTNAME} | cut -d ':' -f1 | cut -d '[' -f1 > /var/run/etcd/member_id
+                echo ${MY_POD_IP} > /var/run/etcd/pod_ip
+                exit 0
+            }
+
+  
+            member_hash() {
+                etcdctl $CERTFILE member list | grep ${HOSTNAME} | cut -d ':' -f1 | cut -d '[' -f1
+            }
+
+            member_hash_v2() {
+                etcdctl --endpoints $(eps) $CERTFILE member list | grep ${HOSTNAME} | cut -d ':' -f1 | cut -d '[' -f1
+            }
+
+            member_hash_unstarted() {
+                etcdctl --endpoints $(eps) member list | grep unstarted | cut -d '[' -f1
+            }
+            
+            enable_rbac() {
+               for i in $(seq 0 $((${INITIAL_CLUSTER_SIZE} - 1))); do
+                   while ! ETCDCTL_API=3 etcdctl --endpoints https://${SET_NAME}-${i}.${SET_NAME}:{{ .Values.service.ClientPort }} $CERTS endpoint health &>> /var/run/etcd/rbac_debug; do sleep 1; done
+               done
+               ETCDCTL_API=3 etcdctl --endpoints https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} $CERTS user add root:$RBAC_PWD &>> /var/run/etcd/rbac_debug
+               ETCDCTL_API=3 etcdctl --endpoints https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} $CERTS auth enable &>> /var/run/etcd/rbac_debug
+            }
+            get_data_storage_type() {
+                {{- if and (not .Values.service.ramdiskWal) (not .Values.service.ramdiskAll) }}
+                echo "harddisk" &> /var/run/etcd/data_storage_type
+                {{- else if and  (.Values.service.ramdiskWal) (not .Values.service.ramdiskAll) }}
+                echo "ramdiskWal" &> /var/run/etcd/data_storage_type
+                {{- else }}
+                echo "ramdiskAll" &> /var/run/etcd/data_storage_type
+                {{- end }}
+            }
+            generate_cert() {
+                cat /var/run/etcd/tls/ca-config/config > /var/run/etcd/config
+                echo "IP.1 = ${MY_POD_IP}" >> /var/run/etcd/config
+                echo "DNS.1 = ${HOSTNAME}.${SET_NAME}" >> /var/run/etcd/config
+                echo "DNS.2 = ${SET_NAME}.${NAMESPACE}.svc" >> /var/run/etcd/config
+                echo "DNS.3 = ${SET_NAME}.${NAMESPACE}.svc.cluster.local" >> /var/run/etcd/config
+                echo "DNS.4 = ${SET_NAME}.${NAMESPACE}" >> /var/run/etcd/config
+                echo "DNS.5 = SDC" >> /var/run/etcd/config
+                if [ ${user_defined_tls} != true ];then
+                    echo "Generating server key pair"
+                    openssl genrsa -out /var/run/etcd/server-key.pem 2048
+                    openssl req -new -key /var/run/etcd/server-key.pem -out /var/run/etcd/server.csr -subj "/C=CN/ST=Shan Dong/L=Qingdao/O=NOKIA/OU=CSF/CN=server" -config /var/run/etcd/config
+                    openssl x509 -req -in /var/run/etcd/server.csr -CA /var/run/etcd/tls/ca-cert/..data/ca.pem -CAserial /var/run/etcd/server.slr -CAkey /var/run/etcd/tls/ca-cert/..data/ca-key.pem -CAcreateserial -out /var/run/etcd/server.pem -days 3650 -extensions v3_req -extfile /var/run/etcd/config
+                    rm /var/run/etcd/server.csr
+                    rm /var/run/etcd/server.slr
+                    echo "Generate server key pair is done"
+                fi
+  
+                echo "Generating peer key pair"
+                openssl genrsa -out /var/run/etcd/peer-key.pem 2048
+                openssl req -new -key /var/run/etcd/peer-key.pem -out /var/run/etcd/peer.csr -subj "/C=CN/ST=Shan Dong/L=Qingdao/O=NOKIA/OU=CSF/CN=member" -config /var/run/etcd/config
+                openssl x509 -req -in /var/run/etcd/peer.csr -CA /var/run/etcd/tls/ca-cert/..data/ca.pem -CAserial /var/run/etcd/peer.slr -CAkey /var/run/etcd/tls/ca-cert/..data/ca-key.pem -CAcreateserial -out /var/run/etcd/peer.pem -days 3650 -extensions v3_req -extfile /var/run/etcd/config
+                rm /var/run/etcd/peer.csr
+                rm /var/run/etcd/peer.slr
+                echo "Generate peer key pair is done"
+            }
+
+            # restore data:
+            if [ -e /var/run/etcd/etcd_snapshot.db ]; then
+              SET_ID=${HOSTNAME##*-}
+              if [ ${SET_ID} -eq 0 ]
+              then
+                touch /tmp/ready
+                echo "start to restore the etcd cluster with tls enabled"
+                generate_cert
+                PEERS="${HOSTNAME}=https://${MY_POD_IP}:{{ .Values.service.PeerPort }}"
+                rm -rf ${DATADIR}
+                rm -rf ${WALDATADIR}
+                new_token=$(cat /var/run/etcd/cluster_token)
+                cur_token=$(cat /var/run/etcd/current_cluster_token)
+                if [ "${new_token}x" == "${cur_token}x" ]
+                then
+                   new_token=${new_token}X
+                fi
+                echo ${new_token} > /var/run/etcd/current_cluster_token
+                # Does not restore until all pods are brought up.
+                while true; do
+                    echo "Waiting for ${SET_NAME}-0.${SET_NAME} to come up"
+                    curl -s ${SET_NAME}-0.${SET_NAME}:9999 || ret=$?
+                        if [ $ret -eq 7 ]
+                        then
+                           break
+                        fi
+                        sleep 1s
+                done
+
+                ETCDCTL_API=3 etcdctl snapshot restore /var/run/etcd/etcd_snapshot.db \
+                   --name ${HOSTNAME} \
+                   --initial-cluster ${PEERS} \
+                   --initial-cluster-token ${new_token} \
+                   --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                   {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                   --wal-dir ${WALDATADIR} \
+                   {{- end }}
+                   --data-dir ${DATADIR}
+                if [ $? -ne 0 ]
+                then
+                   echo "Failed to restore snapshot, try to restart......"
+                   echo "Peers: ${PEERS}"
+                   exit 1
+                fi
+                rm -rf /var/run/etcd/etcd_snapshot.db
+                rm -rf /var/run/etcd/cluster_token
+                chown -R etcd:etcd ${DATADIR}
+                chown -R etcd:etcd ${WALDATADIR} 
+                restore_collect_member &
+                exec etcd --name ${HOSTNAME} \
+                    --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                    --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                    --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                    --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                    --initial-cluster-token ${new_token} \
+                    --initial-cluster ${PEERS} \
+                    --initial-cluster-state new \
+                    --data-dir ${DATADIR} \
+                    {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                    --wal-dir ${WALDATADIR} \
+                    {{- end }}
+                    --client-cert-auth \
+                    --trusted-ca-file=${SERVER_CLIENT_CA} \
+                    --cert-file=${SERVER_CERT} \
+                    --key-file=${SERVER_KEY} \
+                    --peer-client-cert-auth \
+                    --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                    --peer-cert-file=/var/run/etcd/peer.pem \
+                    --peer-key-file=/var/run/etcd/peer-key.pem \
+                    --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                    --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                    --election-timeout "{{ .Values.service.electionTimeout }}" \
+                    --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+              fi
+              echo "Adding a new member due to restore..."
+              touch /tmp/ready
+              generate_cert
+              for i in $(seq 0 ${SET_ID} ); do
+                while true; do
+                    echo "Waiting for ${SET_NAME}-${i}.${SET_NAME} to come up"
+                    curl -s ${SET_NAME}-${i}.${SET_NAME}:9999 || ret=$?
+                    if [ $ret -eq 7 ]
+                    then
+                       break
+                    fi
+                    sleep 1s
+                done
+              done
+
+              for i in $(seq 0 $((${SET_ID} - 1))); do
+                while true; do
+                    echo "Waiting for ${SET_NAME}-${i}.${SET_NAME} to be healthy"
+                    ETCDCTL_API=3 etcdctl --endpoints "https://${SET_NAME}-${i}.${SET_NAME}:{{ .Values.service.ClientPort }}" --user root:$RBAC_PWD ${CERTS} endpoint health | grep "is healthy"
+                    if [ $? -eq 0 ]
+                    then
+                       break
+                    fi
+                    sleep 1s
+                done
+              done
+ 
+              ETCDCTL_API=3 etcdctl  --endpoints "https://${SET_NAME}-0.${SET_NAME}:{{ .Values.service.ClientPort }}" --user root:$RBAC_PWD $CERTS member add ${HOSTNAME} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }} | grep "^ETCD_" > /var/run/etcd/new_member_envs
+              ret=$?
+              if [ $ret -ne 0 ]; then
+                   echo "Exiting ErrCode=$ret"
+                   rm -f /var/run/etcd/new_member_envs
+                   exit 1
+              fi
+              rm -rf ${DATADIR}
+              rm -rf ${WALDATADIR}
+              rm -rf /var/run/etcd/etcd_snapshot.db
+              rm -rf /var/run/etcd/cluster_token
+              source /var/run/etcd/new_member_envs
+              restore_collect_member &
+              exec etcd --name ${HOSTNAME} \
+                        --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                        --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                        --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                        --data-dir ${DATADIR} \
+                        {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                        --wal-dir ${WALDATADIR} \
+                        {{- end }}
+                        --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                        --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+                        --initial-cluster-state ${ETCD_INITIAL_CLUSTER_STATE}\
+                        --client-cert-auth \
+                        --trusted-ca-file=${SERVER_CLIENT_CA} \
+                        --cert-file=${SERVER_CERT} \
+                        --key-file=${SERVER_KEY} \
+                        --peer-client-cert-auth \
+                        --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                        --peer-cert-file=/var/run/etcd/peer.pem \
+                        --peer-key-file=/var/run/etcd/peer-key.pem \
+                        --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                        --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                        --election-timeout "{{ .Values.service.electionTimeout }}" \
+                        --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+            fi
+
+            # re-joining after failure?
+            if [ -e /var/run/etcd/default.etcd ]; then
+                touch /tmp/ready
+                SET_ID=${HOSTNAME##*-}
+                for i in $(seq 0 ${SET_ID} ); do
+                  while true; do
+                    echo "Waiting for ${SET_NAME}-${i}.${SET_NAME} to come up"
+                    curl -s ${SET_NAME}-${i}.${SET_NAME}:9999 || ret=$?
+                    if [ $ret -eq 7 ]
+                    then
+                       break
+                    fi
+                    sleep 1s
+                  done
+                done
+
+                # re-join or re-build
+                generate_cert
+                etcdctl --endpoints $(eps) $CERTFILE member list &> /var/run/etcd/member_list
+                if [ $? -eq 0 ];then
+                    #more than half members work
+                    member_list=$(cat /var/run/etcd/member_list)
+                    member_id=$(cat /var/run/etcd/member_id)
+                    {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                    echo "member_list: ${member_list}"
+                    echo "member_id: ${member_id}"
+                    MEMBER_HASH=$(member_hash_v2)
+                    if [ "${MEMBER_HASH}x" == "x" ]
+                    then
+                        MEMBER_HASH=$(member_hash_unstarted)
+                    fi
+                    echo "member_hash: ${MEMBER_HASH}"
+                    if [ -n "${MEMBER_HASH}" ]; then
+                        echo "Remove the old member"
+                        ETCDCTL_API=3 etcdctl --endpoints $(eps) --user root:$RBAC_PWD $CERTS member remove ${MEMBER_HASH}
+                    fi
+
+                    echo "Adding new member to cluster"
+                    ETCDCTL_API=3 etcdctl --endpoints $(eps) --user root:$RBAC_PWD $CERTS member add ${HOSTNAME} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }} | grep "^ETCD_" > /var/run/etcd/new_member_envs
+                    ret=$?
+                    if [ $ret -ne 0 ]; then
+                        echo "Exiting ErrCode=$ret"
+                        rm -f /var/run/etcd/new_member_envs
+                        exit 1
+                    fi
+                    rm -rf ${DATADIR}
+                    rm -rf ${WALDATADIR}
+                    cat /var/run/etcd/new_member_envs
+                    source /var/run/etcd/new_member_envs
+                    collect_member &
+                    exec etcd --name ${HOSTNAME} \
+                        --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                        --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                        --advertise-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }} \
+                        --data-dir ${DATADIR} \
+                        --wal-dir ${WALDATADIR} \
+                        --initial-advertise-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                        --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+                        --initial-cluster-state ${ETCD_INITIAL_CLUSTER_STATE} \
+                        --client-cert-auth \
+                        --trusted-ca-file=${SERVER_CLIENT_CA} \
+                        --cert-file=${SERVER_CERT} \
+                        --key-file=${SERVER_KEY} \
+                        --peer-client-cert-auth \
+                        --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                        --peer-cert-file=/var/run/etcd/peer.pem \
+                        --peer-key-file=/var/run/etcd/peer-key.pem \
+                        --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                        --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                        --election-timeout "{{ .Values.service.electionTimeout }}" \
+                        --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    {{- end }}
+                    echo ${member_list}|grep ${member_id}
+                    ret=$?
+                    if [ $ret -eq 1 ]; then
+                        #member_id not in member list, this a new member 
+                        echo "Adding a new member due to hard reboot etc"
+                        echo "member_list ${member_list}"
+                        echo "member_id ${member_id}"
+                        MEMBER_HASH=$(member_hash_v2)
+                        if [ "${MEMBER_HASH}x" == "x" ]
+                        then
+                            MEMBER_HASH=$(member_hash_unstarted)
+                        fi
+                        echo "member_hash: ${MEMBER_HASH}"
+                        if [ -n "${MEMBER_HASH}" ]; then
+                            echo "Remove the old member"
+                            ETCDCTL_API=3 etcdctl  --endpoints $(eps) --user root:$RBAC_PWD $CERTS member remove ${MEMBER_HASH}
+                        fi
+
+                        ETCDCTL_API=3 etcdctl  --endpoints $(eps) --user root:$RBAC_PWD $CERTS member add ${HOSTNAME} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }} | grep "^ETCD_" > /var/run/etcd/new_member_envs
+                        ret=$?
+                        if [ $ret -ne 0 ]; then
+                            echo "Exiting ErrCode=$ret"
+                            rm -f /var/run/etcd/new_member_envs
+                            exit 1
+                        fi
+                        rm -rf ${DATADIR}
+                        cat /var/run/etcd/new_member_envs
+                        source /var/run/etcd/new_member_envs
+                        collect_member &
+                        exec etcd --name ${HOSTNAME} \
+                            --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                            --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                            --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                            --data-dir ${DATADIR} \
+                            --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                            --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+                            --initial-cluster-state ${ETCD_INITIAL_CLUSTER_STATE}\
+                            --client-cert-auth \
+                            --trusted-ca-file=${SERVER_CLIENT_CA} \
+                            --cert-file=${SERVER_CERT} \
+                            --key-file=${SERVER_KEY} \
+                            --peer-client-cert-auth \
+                            --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                            --peer-cert-file=/var/run/etcd/peer.pem \
+                            --peer-key-file=/var/run/etcd/peer-key.pem \
+                            --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                            --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                            --election-timeout "{{ .Values.service.electionTimeout }}" \
+                            --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    elif [ $ret -eq 2 ]; then
+                        # file member_id is null for some unkown reason
+                        echo "member_id: ${member_id}"
+                        echo "Remove the member and re-add"
+                        echo "member_list: ${member_list}"
+                        MEMBER_HASH=$(member_hash_v2)
+                        if [ "${MEMBER_HASH}x" == "x" ]
+                        then
+                            MEMBER_HASH=$(member_hash_unstarted)
+                        fi
+                        echo "member_hash: ${MEMBER_HASH}"
+                        if [ -n "${MEMBER_HASH}" ]; then
+                            echo "Remove the old member"
+                            ETCDCTL_API=3 etcdctl  --endpoints $(eps) --user root:$RBAC_PWD $CERTS member remove ${MEMBER_HASH}
+                        fi
+
+                        ETCDCTL_API=3 etcdctl  --endpoints $(eps) --user root:$RBAC_PWD $CERTS member add ${HOSTNAME} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }} | grep "^ETCD_" > /var/run/etcd/new_member_envs
+                        ret=$?
+                        if [ $ret -ne 0 ]; then
+                            echo "Exiting ErrCode=$ret"
+                            rm -f /var/run/etcd/new_member_envs
+                            exit 1
+                        fi
+                        rm -rf ${DATADIR}
+                        cat /var/run/etcd/new_member_envs
+                        source /var/run/etcd/new_member_envs
+                        collect_member &
+                        exec etcd --name ${HOSTNAME} \
+                            --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                            --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                            --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                            --data-dir ${DATADIR} \
+                            --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                            --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+                            --initial-cluster-state ${ETCD_INITIAL_CLUSTER_STATE}\
+                            --client-cert-auth \
+                            --trusted-ca-file=${SERVER_CLIENT_CA} \
+                            --cert-file=${SERVER_CERT} \
+                            --key-file=${SERVER_KEY} \
+                            --peer-client-cert-auth \
+                            --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                            --peer-cert-file=/var/run/etcd/peer.pem \
+                            --peer-key-file=/var/run/etcd/peer-key.pem \
+                            --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                            --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                            --election-timeout "{{ .Values.service.electionTimeout }}" \
+                            --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    else
+                        #member_id in member_list            
+                        echo "Update etcd member to rejoin cluster"
+                        member_id=$(cat /var/run/etcd/member_id)
+                        ETCDCTL_API=3 etcdctl --endpoints $(eps) --user root:$RBAC_PWD $CERTS member update ${member_id} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }}
+                        ret=$?
+                        if [ $ret -ne 0 ]; then
+                            echo "Exiting ErrCode=$ret"
+                            exit 1
+                        fi
+                        exec etcd --name ${HOSTNAME} \
+                                     --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                                     --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                                     --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                                     --data-dir ${DATADIR} \
+                                     --client-cert-auth \
+                                     --trusted-ca-file=${SERVER_CLIENT_CA} \
+                                     --cert-file=${SERVER_CERT} \
+                                     --key-file=${SERVER_KEY} \
+                                     --peer-client-cert-auth \
+                                     --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                                     --peer-cert-file=/var/run/etcd/peer.pem \
+                                     --peer-key-file=/var/run/etcd/peer-key.pem \
+                                     --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                                     --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                                     --election-timeout "{{ .Values.service.electionTimeout }}" \
+                                     --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    fi
+                else
+                    data_storage_type=$(cat /var/run/etcd/data_storage_type)
+                    get_data_storage_type
+                    current_data_storage_type=$(cat /var/run/etcd/data_storage_type)
+                    if [ "$data_storage_type" != "$current_data_storage_type" ]; then
+                        if [ "harddisk" == "$data_storage_type" ]; then
+                            if [ "ramdiskWal" == "$current_data_storage_type" ]; then
+                                echo "hard disk upgrade to ramdiskWal"
+                                mkdir -p ${WALDATADIR}
+                                cp -r /var/run/etcd/default.etcd/member/wal/* ${WALDATADIR}
+                                rm -rf /var/run/etcd/default.etcd/member/wal
+                            fi
+                            if [ "ramdiskAll" == "$current_data_storage_type" ]; then
+                                echo "hard disk upgrade to ramdiskAll"
+                                mkdir -p ${WALDATADIR}
+                                mkdir -p ${DATADIR}/member
+                                cp -r /var/run/etcd/default.etcd/member/wal/* ${WALDATADIR}
+                                cp -r /var/run/etcd/default.etcd/member/snap ${DATADIR}/member
+                                rm -rf /var/run/etcd/default.etcd/*
+                            fi
+                        fi
+                    fi
+                    #more than half members are down
+                    #all members are down
+                    echo "ETCD cluster lost quorum, trying to reestablish cluster..."
+                    {{- if and (not .Values.service.ramdiskWal) (not .Values.service.ramdiskAll) }}
+                    last_ip=$(cat "/var/run/etcd/pod_ip")
+                    if [ "${MY_POD_IP}x" == "${last_ip}x" ]
+                    then
+                       echo "This is a container restart scenario, address is not changed, just start etcd.."
+                       exec etcd --name ${HOSTNAME} \
+                                 --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                                 --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                                 --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                                 --data-dir ${DATADIR} \
+                                 {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                                 --wal-dir ${WALDATADIR} \
+                                 {{- end }}
+                                 --client-cert-auth \
+                                 --trusted-ca-file=${SERVER_CLIENT_CA} \
+                                 --cert-file=${SERVER_CERT} \
+                                 --key-file=${SERVER_KEY} \
+                                 --peer-client-cert-auth \
+                                 --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                                 --peer-cert-file=/var/run/etcd/peer.pem \
+                                 --peer-key-file=/var/run/etcd/peer-key.pem \
+                                 --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                                 --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                                 --election-timeout "{{ .Values.service.electionTimeout }}" \
+                                 --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    fi
+                    {{- end }}
+
+                    SET_ID=${HOSTNAME##*-}
+                    if [ ${SET_ID} -eq 0 ]; then
+                        #pod 0
+                        echo "Starting a new cluster due to more than half members are down"
+                        {{- if and (.Values.service.ramdiskWal) (not .Values.service.ramdiskAll)}}
+                        if [ "$data_storage_type" == "$current_data_storage_type" ]; then
+                            echo "Backup snapshot"
+                            cp /var/run/etcd/default.etcd/member/snap/db /var/run/etcd/snapshot.db
+                            rm -rf ${DATADIR}
+                            rm -rf ${WALDATADIR}
+                            ETCDCTL_API=3 etcdctl snapshot restore /var/run/etcd/snapshot.db \
+                                              --name ${HOSTNAME} \
+                                              --initial-cluster ${HOSTNAME}=https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                                              --initial-cluster-token etcd-cluster-1 \
+                                              --initial-advertise-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                                              --data-dir ${DATADIR} \
+                                              --wal-dir ${WALDATADIR} \
+                                              --skip-hash-check
+                            if [ $? -ne 0 ]
+                            then
+                               echo "Failed to recover cluster"
+                               exit 1
+                            fi
+                            rm -rf /var/run/etcd/snapshot.db
+                        fi
+                        {{- else }}
+                            cp /var/run/etcd/default.etcd/member/snap/db /var/run/etcd/snapshot.db
+                            rm -rf ${DATADIR}
+                            ETCDCTL_API=3 etcdctl snapshot restore /var/run/etcd/snapshot.db \
+                                              --name ${HOSTNAME} \
+                                              --initial-cluster ${HOSTNAME}=https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                                              --initial-cluster-token etcd-cluster-1 \
+                                              --initial-advertise-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                                              --data-dir ${DATADIR} \
+                                              --skip-hash-check
+                            rm -rf /var/run/etcd/snapshot.db
+                        {{- end }}
+                        collect_member &
+                        if [ -n "${RBAC_PWD}" ]; then
+                        #PWD is not empry, enable RBAC
+                           enable_rbac &
+                        fi
+                        exec etcd --name ${HOSTNAME} \
+                                  --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                                  --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                                  --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                                  --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                                  --initial-cluster-token etcd-cluster-1 \
+                                  --initial-cluster ${HOSTNAME}=https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                                  --initial-cluster-state new \
+                                  --data-dir ${DATADIR} \
+                                  {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                                  --wal-dir ${WALDATADIR} \
+                                  {{- end }}
+                                  --client-cert-auth \
+                                  --trusted-ca-file=${SERVER_CLIENT_CA} \
+                                  --cert-file=${SERVER_CERT} \
+                                  --key-file=${SERVER_KEY} \
+                                  --peer-client-cert-auth \
+                                  --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                                  --peer-cert-file=/var/run/etcd/peer.pem \
+                                  --peer-key-file=/var/run/etcd/peer-key.pem \
+                                  --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                                  --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                                  --election-timeout "{{ .Values.service.electionTimeout }}" \
+                                  --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    else
+                        # pod 1 and pod 2
+                        while true; do
+                            echo "Waiting for ${SET_NAME}-0.${SET_NAME} to start cluster"
+                            etcdctl --endpoints https://${SET_NAME}-0.${SET_NAME}:{{ .Values.service.ClientPort }} $CERTFILE member list &> /var/run/etcd/member_list
+                            if [ $? -eq 0 ]; then
+                                break
+                            fi
+                            sleep 1s
+                        done
+
+                        echo "Adding a new member  due to more than half members are down"
+                        ETCDCTL_API=3 etcdctl --endpoints https://${SET_NAME}-0.${SET_NAME}:{{ .Values.service.ClientPort }} --user root:$RBAC_PWD $CERTS member add ${HOSTNAME} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }} | grep "^ETCD_" > /var/run/etcd/new_member_envs
+                        ret=$?
+                        if [ $ret -ne 0 ]; then
+                            echo "Exiting ErrCode=$ret"
+                            rm -f /var/run/etcd/new_member_envs
+                            exit 1
+                        fi
+                        rm -rf ${DATADIR}
+                        rm -rf ${WALDATADIR}
+                        cat /var/run/etcd/new_member_envs
+                        source /var/run/etcd/new_member_envs
+                        collect_member &
+                        exec etcd --name ${HOSTNAME} \
+                            --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                            --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                            --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                            --data-dir ${DATADIR} \
+                            {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                            --wal-dir ${WALDATADIR} \
+                            {{- end }}
+                            --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                            --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+                            --initial-cluster-state ${ETCD_INITIAL_CLUSTER_STATE}\
+                            --client-cert-auth \
+                            --trusted-ca-file=${SERVER_CLIENT_CA} \
+                            --cert-file=${SERVER_CERT} \
+                            --key-file=${SERVER_KEY} \
+                            --peer-client-cert-auth \
+                            --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                            --peer-cert-file=/var/run/etcd/peer.pem \
+                            --peer-key-file=/var/run/etcd/peer-key.pem \
+                            --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                            --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                            --election-timeout "{{ .Values.service.electionTimeout }}" \
+                            --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+                    fi
+                fi
+            fi
+            mkdir -p /var/run/etcd/default.etcd
+            # etcd-SET_ID
+            SET_ID=${HOSTNAME##*-}
+            echo $SET_ID
+            # adding a new member to existing cluster (assuming all initial pods are available)
+            if [ "${SET_ID}" -ge ${INITIAL_CLUSTER_SIZE} ]; then
+                # member already added?
+                MEMBER_HASH=$(member_hash)
+                if [ -n "${MEMBER_HASH}" ]; then
+                    # the member hash exists but for some reason etcd failed
+                    # as the datadir has not be created, we can remove the member
+                    # and retrieve new hash
+                    ETCDCTL_API=3 etcdctl  --endpoints $(eps) --user root:$RBAC_PWD $CERTS member remove ${MEMBER_HASH}
+
+                fi
+
+                generate_cert
+                echo "Adding new member  due to scale-out"
+                ETCDCTL_API=3 etcdctl --endpoints $(eps) --user root:$RBAC_PWD $CERTS member add ${HOSTNAME} --peer-urls=https://${MY_POD_IP}:{{ .Values.service.PeerPort }} | grep "^ETCD_" > /var/run/etcd/new_member_envs
+                ret=$?
+                if [ $ret -ne 0 ]; then
+                    echo "Exiting ErrCode=$ret"
+                    rm -f /var/run/etcd/new_member_envs
+                    exit 1
+                fi
+                PEERS=""
+                for i in $(seq 0 $((${SET_ID} - 1))); do
+                    PEERS="${PEERS}${PEERS:+,}${SET_NAME}-${i}=https://${SET_NAME}-${i}.${SET_NAME}:{{ .Values.service.PeerPort }}"
+                done
+
+                touch /tmp/ready
+                cat /var/run/etcd/new_member_envs
+                source /var/run/etcd/new_member_envs
+                get_data_storage_type &
+                collect_member &
+                exec etcd --name ${HOSTNAME} \
+                    --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                    --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                    --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                    --data-dir ${DATADIR} \
+                    {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                    --wal-dir ${WALDATADIR} \
+                    {{- end }}
+                    --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                    --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+                    --initial-cluster-state ${ETCD_INITIAL_CLUSTER_STATE}\
+                    --client-cert-auth \
+                    --trusted-ca-file=${SERVER_CLIENT_CA} \
+                    --cert-file=${SERVER_CERT} \
+                    --key-file=${SERVER_KEY} \
+                    --peer-client-cert-auth \
+                    --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                    --peer-cert-file=/var/run/etcd/peer.pem \
+                    --peer-key-file=/var/run/etcd/peer-key.pem \
+                    --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                    --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                    --election-timeout "{{ .Values.service.electionTimeout }}" \
+                    --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+            fi
+            
+            generate_cert
+            touch /tmp/ready
+            for i in $(seq 0 $((${INITIAL_CLUSTER_SIZE} - 1))); do
+                while true; do
+                    echo "Waiting for ${SET_NAME}-${i}.${SET_NAME} to come up"
+                    curl -s ${SET_NAME}-${i}.${SET_NAME}:9999 || ret=$?
+                    if [ $ret -eq 7 ]
+                    then
+                       break
+                    fi
+                    sleep 1s
+                done
+            done
+            PEERS=""
+            for i in $(seq 0 $((${INITIAL_CLUSTER_SIZE} - 1))); do
+                PEERS="${PEERS}${PEERS:+,}${SET_NAME}-${i}=https://${SET_NAME}-${i}.${SET_NAME}:{{ .Values.service.PeerPort }}"
+            done
+            get_data_storage_type &
+            collect_member &
+            SET_ID=${HOSTNAME##*-}
+            if [ ${SET_ID} -eq 0 ]&&[ -n "${RBAC_PWD}" ]; then
+            #PWD is not empry, enable RBAC
+               enable_rbac &                
+            fi
+            # join member
+            exec etcd --name ${HOSTNAME} \
+                --initial-advertise-peer-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.PeerPort }} \
+                --listen-peer-urls https://${MY_POD_IP}:{{ .Values.service.PeerPort }} \
+                --listen-client-urls https://${MY_POD_IP}:{{ .Values.service.ClientPort }},https://127.0.0.1:{{ .Values.service.ClientPort }} \
+                --advertise-client-urls https://${HOSTNAME}.${SET_NAME}:{{ .Values.service.ClientPort }} \
+                --initial-cluster-token etcd-cluster-1 \
+                --initial-cluster ${PEERS} \
+                --initial-cluster-state new \
+                --data-dir ${DATADIR} \
+                {{- if or .Values.service.ramdiskWal .Values.service.ramdiskAll }}
+                --wal-dir ${WALDATADIR} \
+                {{- end }}
+                --client-cert-auth \
+                --trusted-ca-file=${SERVER_CLIENT_CA}\
+                --cert-file=${SERVER_CERT} \
+                --key-file=${SERVER_KEY} \
+                --peer-client-cert-auth \
+                --peer-trusted-ca-file=/var/run/etcd/tls/ca-cert/..data/ca.pem \
+                --peer-cert-file=/var/run/etcd/peer.pem \
+                --peer-key-file=/var/run/etcd/peer-key.pem \
+                --snapshot-count "{{ .Values.service.snapshotCount }}" \
+                --heartbeat-interval "{{ .Values.service.heartbeatInterval }}" \
+                --election-timeout "{{ .Values.service.electionTimeout }}" \
+                --auto-compaction-retention "{{ .Values.service.autoCompactionRetention }}"
+      - name: cbura-sidecar
+        image: "{{ .Values.global.imageRegistry }}/um/cbura:1.0.3-871"
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - mountPath: /tmpdatavol
+          name: "tmpdatavol"
+        resources:
+          limits:
+            cpu: 1
+            memory: 512Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ .Values.name.podname }}
+              topologyKey: "kubernetes.io/hostname"
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ .Values.name.podname }}
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+  volumeClaimTemplates:
+  - metadata:
+      name: datadir
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          # upstream recommended max is 700M
+          storage: "{{ .Values.service.Storage }}"
+    {{- if .Values.compaas }}
+      storageClassName: "{{ .Values.compaas.storageClass }}"
+    {{- else if .Values.service.StorageClass }}
+      storageClassName: "{{ .Values.service.StorageClass }}"
+    {{- end }}
+{{- end -}}

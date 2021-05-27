@@ -1,0 +1,57 @@
+{{- if not (eq (default "enable" .Values.hooks.preInstallJob) "disable") }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name.podname }}-pre-install
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.hooks.deletePolicy | quote }}
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "cmdb-admin.labels" . | indent 8 }}
+        type: admin
+    spec:
+      {{- if .Values.rbac_enabled }}
+      serviceAccountName: {{ .Values.name.podname }}-install
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: pre-install-admin
+        {{- include "cmdb-admin.image" . | indent 8 }}
+        args: [ "install" ]
+        env:
+        - name: CLUSTER_TYPE
+          value: "{{ .Values.cluster_type }}"
+        - name: CLUSTER_NAME
+          value: "{{ .Values.cluster_name | default .Release.Name | trunc 32 }}"
+        # NOTE: Since configmaps have not been created yet, set mariadb
+        # and maxscale cluster sizes here to perform pre-deploy checks
+        - name: CLUSTER_SIZE
+          value: "{{ .Values.mariadb.count }}"
+        - name: MAXSCALE_SIZE
+          value: "{{ .Values.maxscale.count }}" 
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: HOOK_TYPE
+          value: "pre"
+        {{- if gt (int .Values.admin.preInstallTimeout) 0 }}
+        - name: HOOK_TIMEOUT
+          value: "{{ .Values.admin.preInstallTimeout }}"
+        {{- end }}
+        {{- if and .Values.admin.debug (gt (int (default '0' .Values.admin.jobDelay)) 0) }}
+        - name: HOOK_DELAY
+          value: "{{ .Values.admin.jobDelay }}"
+        {{- end }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+{{- end }}

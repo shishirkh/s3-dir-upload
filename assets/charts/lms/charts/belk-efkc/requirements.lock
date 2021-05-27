@@ -1,0 +1,15 @@
+dependencies:
+- name: belk-fluentd
+  repository: https://repo.lab.pl.alcatel-lucent.com/csf-helm-stable/
+  version: 4.5.16
+- name: belk-elasticsearch
+  repository: https://repo.lab.pl.alcatel-lucent.com/csf-helm-stable/
+  version: 6.0.18
+- name: belk-kibana
+  repository: https://repo.lab.pl.alcatel-lucent.com/csf-helm-stable/
+  version: 6.0.8
+- name: belk-curator
+  repository: https://repo.lab.pl.alcatel-lucent.com/csf-helm-stable/
+  version: 4.4.7
+digest: sha256:aef755ca3efc0745a43fd784e131b6ecd665dbf7b61fbfaefae73f334993d3fe
+generated: "2019-12-19T10:56:33.85325354Z"

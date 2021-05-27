@@ -1,0 +1,120 @@
+#
+# Tests that simply verify that maxscale is functioning on each
+# maxscale pod
+#
+---
+
+{{- if gt (int .Values.maxscale.count) 0 }}
+
+# Verify maxscale on each maxscale pod
+# (a) Check maxscale sanity
+# (b) Check that maxscale recognizes a master
+
+
+# (a) Verify maxscale_adm --check-sanity Success
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.name.podname }}-test-maxscale-verify-sanity
+  labels:
+    {{- include "cmdb-test.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+    "helm.sh/hook-weight": "1"
+spec:
+  restartPolicy: Never
+  {{- if .Values.rbac_enabled }}
+  serviceAccountName: {{ .Values.name.podname }}
+  {{- else }}
+  securityContext:
+    runAsUser: 0
+  {{- end }}
+  containers:
+  - name: maxscale-verify-sanity
+    {{- include "cmdb-admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    volumeMounts:
+    - name: cluster-cm
+      mountPath: /chart
+    command:
+    - bash
+    - "-c"
+    - |
+      set -euo pipefail
+      . /chart/cluster.env
+      for id in $(seq 0 $((MAXSCALE_SIZE-1))); do
+          kubectl exec -n ${K8S_NAMESPACE} ${K8S_PREFIX}-maxscale-${id} -- maxscale_adm --check-sanity
+      done
+       
+    env:
+    - name: K8S_NAMESPACE
+      value: "{{ .Release.Namespace }}"
+    - name: K8S_PREFIX
+      value: {{ .Values.name.podname }}
+
+  volumes:
+  - name: cluster-cm
+    configMap:
+      name: {{ .Values.name.podname }}-mariadb-cluster
+---
+
+# Verify MaxScale recognizes a Master
+# (b) Verify maxscale_adm --get-master Success
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.name.podname }}-test-maxscale-verify-master
+  labels:
+    {{- include "cmdb-test.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+    "helm.sh/hook-weight": "0"
+spec:
+  restartPolicy: Never
+  {{- if .Values.rbac_enabled }}
+  serviceAccountName: {{ .Values.name.podname }}
+  {{- else }}
+  securityContext:
+    runAsUser: 0
+  {{- end }}
+  containers:
+  - name: maxscale-verify-master
+    {{- include "cmdb-admin.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    volumeMounts:
+    - name: cluster-cm
+      mountPath: /chart
+    command:
+    - bash
+    - "-c"
+    - |
+      set -euo pipefail
+      . /chart/cluster.env
+      for id in $(seq 0 $((MAXSCALE_SIZE-1))); do
+          kubectl exec -n ${K8S_NAMESPACE} ${K8S_PREFIX}-maxscale-${id} -- maxscale_adm --get-master
+      done
+       
+    env:
+    - name: K8S_NAMESPACE
+      value: "{{ .Release.Namespace }}"
+    - name: K8S_PREFIX
+      value: {{ .Values.name.podname }}
+
+  volumes:
+  - name: cluster-cm
+    configMap:
+      name: {{ .Values.name.podname }}-mariadb-cluster
+{{- end }}

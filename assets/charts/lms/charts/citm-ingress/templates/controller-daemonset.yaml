@@ -1,0 +1,248 @@
+{{- if eq .Values.controller.kind "DaemonSet" }}
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  labels:
+    app: {{ template "name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    component: "{{ .Values.controller.name }}"
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    class: {{ .Values.controller.ingressClass }}
+  name: {{ template "controller.fullname" . }}
+spec:
+  updateStrategy:
+{{ toYaml .Values.controller.updateStrategy | indent 4 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/controller-configmap.yaml") . | sha256sum }}
+    {{- if .Values.controller.podAnnotations }}
+{{ toYaml .Values.controller.podAnnotations | indent 8}}
+    {{- end }}
+{{- if (or (.Values.grafanaURL) (.Values.metrics)) }}
+        prometheus.io/port: "9913"
+        prometheus.io/scrape: "true"
+{{- end }}
+      labels:
+        app: {{ template "name" . }}
+        component: "{{ .Values.controller.name }}"
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ template "name" . }}-{{ .Values.controller.name }}
+          image: "{{ .Values.global.registry }}/{{ .Values.controller.imageRepo }}:{{ .Values.controller.imageTag }}"
+          imagePullPolicy: "{{ .Values.controller.imagePullPolicy }}"
+          args:
+            - /nginx-ingress-controller
+            - --default-backend-service={{ if .Values.defaultBackend.enabled }}{{ .Release.Namespace }}/{{ .Release.Name }}-default404{{ else }}{{ .Values.controller.defaultBackendService }}{{ end }}
+          {{- if .Values.controller.publishService.enabled }}
+            - --publish-service={{ template "controller.publishServicePath" . }}
+          {{- end }}
+            - --election-id={{ .Values.controller.electionID }}
+            - --ingress-class={{ .Values.controller.ingressClass }}
+            - --configmap={{ .Release.Namespace }}/{{ template "controller.fullname" . }}
+          {{- if .Values.controller.UdpServiceConfigMapNoNamespace }}
+            - --udp-services-configmap={{ template "fullname" . }}-udp
+          {{- else }}
+            - --udp-services-configmap={{ .Release.Namespace }}/{{ template "fullname" . }}-udp
+          {{- end }}
+          {{- if .Values.controller.TcpServiceConfigMapNoNamespace }}
+            - --tcp-services-configmap={{ template "fullname" . }}-tcp
+          {{- else }}
+            - --tcp-services-configmap={{ .Release.Namespace }}/{{ template "fullname" . }}-tcp
+          {{- end }}
+          {{- if .Values.controller.scope.enabled }}
+            - --watch-namespace={{ default .Release.Namespace .Values.controller.scope.namespace }}
+          {{- end }}
+          {{- if .Values.controller.defaultSSLCertificate }}
+            - --default-ssl-certificate={{ tpl .Values.controller.defaultSSLCertificate . }}
+          {{- end }}
+          {{- if .Values.httpsForAllServers }}
+            - --citm-enable-https-all-server
+          {{- end }}
+          {{- if .Values.controller.extraArgs }}
+            {{- range $key, $value := .Values.controller.extraArgs }}
+              {{- if $value }}
+            - --{{ $key }}={{ $value }}
+              {{- else }}
+            - --{{ $key }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+            - --sort-backends
+          {{- if .Values.controller.UseOnlyIpv6Endpoint }}
+            - --only-ipv6-endpoint
+          {{- end }}
+          {{- if .Values.controller.CalicoVersion }}
+            - --use-calico-cni-workload-endpoint={{ .Values.controller.CalicoVersion }}
+          {{- end }}
+          {{- if .Values.controller.healthzPort }}
+            - --healthz-port={{ .Values.controller.healthzPort }}
+          {{- end }}
+          {{- if .Values.controller.forcePort  }}
+            - --http-port=80
+          {{- else if .Values.controller.httpPort  }}
+            - --http-port={{ .Values.controller.httpPort  }}
+          {{- end }}
+          {{- if .Values.controller.forcePort  }}
+            - --https-port=443
+          {{- else if .Values.controller.httpsPort  }}
+            - --https-port={{ .Values.controller.httpsPort  }}
+          {{- end }}
+          {{- if .Values.controller.sslPasstroughProxyPort  }}
+            - --ssl-passtrough-proxy-port={{ .Values.controller.sslPasstroughProxyPort }}
+          {{- end }}
+          {{- if .Values.controller.statusPort  }}
+            - --status-port={{ .Values.controller.statusPort }}
+          {{- end }}
+          securityContext:
+          {{- if .Values.controller.securityContextPrivileged }}
+            privileged: true
+          {{- end }}
+            capabilities:
+                drop:
+                - ALL
+                add:
+                - NET_BIND_SERVICE
+          {{- if .Values.controller.workerProcessAsRoot }}
+            runAsUser: 0
+          {{- else }}
+            # nginx -> 1000
+            runAsUser: 1000
+          {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if eq .Values.controller.logToJsonFormat true }}
+            - name: "CITM_LOG_HARMONIZED"
+              value: "true"
+            {{- end }}
+            - name: NGX_CONTAINER_OPTION
+              value: "ingress"
+            {{- if .Values.domain_name }}
+            - name: DOMAIN_NAME
+              value: {{ .Values.domain_name }}
+            {{- end }}
+            {{- if (or (.Values.grafanaURL) (.Values.metrics)) }}
+            - name: CITM_NGINX_VTS_EXPORTER
+              value: "true"
+            {{- end }}
+            {{- if .Values.controller.statusPort  }}
+            - name: CITM_NGINX_STATUS_PORT
+              value: "{{ .Values.controller.statusPort }}"
+            {{- end }}
+            {{- if .Values.controller.etcd.enabled }}
+            # Configure the location of your etcd cluster.
+            - name: ETCD_ENDPOINTS
+              value: "{{ .Values.controller.etcd.etcd_endpoints}}"
+            - name: ETCD_CA_CERT_FILE
+              value: "{{  .Values.controller.etcd.ETCD_CA_CERT }}"
+            - name: ETCD_CERT_FILE
+              value: "{{  .Values.controller.etcd.ETCD_CLIENT_CERT }}"
+            - name: ETCD_KEY_FILE
+              value: "{{  .Values.controller.etcd.ETCD_CLIENT_KEY }}"
+            {{- end }}
+          {{- if or (eq (.Values.controller.customLuaModules.enabled | default false) true) (eq (.Values.controller.etcd.enabled | default false) true) }}
+          volumeMounts:
+          {{- if .Values.controller.etcd.enabled }}
+            - mountPath: /etc/etcd
+              name: etc-etcd
+              readOnly: true
+          {{- end }}
+          {{ if (.Values.controller.customLuaModules.enabled | default false) }}
+          {{- range .Values.controller.customLuaModules.modules}}
+            - mountPath: /ingress-controller/lua/{{ .moduleName }}
+              name: {{ .moduleName }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              {{- if .Values.controller.healthzPort }}
+              port: {{ .Values.controller.healthzPort }}
+              {{- else }}
+              port: 10254
+              {{- end }}
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+          ports:
+            - name: http
+              {{- if .Values.controller.httpPort  }}
+              containerPort: {{ .Values.controller.httpPort }}
+              {{- else }}
+              containerPort: 80
+              {{- end }}
+              protocol: TCP
+            - name: https
+              {{- if .Values.controller.httpsPort  }}
+              containerPort: {{ .Values.controller.httpsPort }}
+              {{- else }}
+              containerPort: 443
+              {{- end }}
+              protocol: TCP
+          {{- range $key, $value := .Values.tcp }}
+            - name: "{{ $key }}-tcp"
+              containerPort: {{ $key }}
+              protocol: TCP
+          {{- end }}
+          {{- range $key, $value := .Values.udp }}
+            - name: "{{ $key }}-udp"
+              containerPort: {{ $key }}
+              protocol: UDP
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              {{- if .Values.controller.healthzPort }}
+              port: {{ .Values.controller.healthzPort }}
+              {{- else }}
+              port: 10254
+              {{- end }}
+              scheme: HTTP
+          resources:
+{{ toYaml .Values.controller.resources | indent 12 }}
+      hostNetwork: {{ .Values.controller.hostNetwork }}
+      nodeSelector:
+{{- if .Values.controller.runOnEdge }}
+        is_edge: 'true'
+{{- end }}
+    {{- if .Values.controller.nodeSelector }}
+{{ toYaml .Values.controller.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.controller.tolerations }}
+      tolerations:
+{{ toYaml .Values.controller.tolerations | indent 8 }}
+    {{- end }}
+      serviceAccountName: {{ if .Values.rbac.create }}{{ template "fullname" . }}{{ else }}"{{ .Values.rbac.serviceAccountName }}"{{ end }}
+      terminationGracePeriodSeconds: 60
+      volumes:
+      {{ if .Values.controller.defaultSSLCertificate }}
+      # This volume is specified here to prevent from starting pods before the default certificate is created
+      {{ $defaultSecret := tpl .Values.controller.defaultSSLCertificate . }}
+      {{ $secretName := split "/" $defaultSecret }}
+        - secret:
+            secretName: "{{ $secretName._1 }}"
+          name: default-tls-cert
+      {{ end }}
+      {{- if .Values.controller.etcd.enabled }}
+        - hostPath:
+            path: /etc/etcd
+          name: etc-etcd
+      {{- end }}
+      {{ if .Values.controller.customLuaModules.enabled }}
+        {{- range .Values.controller.customLuaModules.modules }}
+        - name: {{ .moduleName }}
+          configMap:
+            name: {{ .sourcesConfigMapName }}
+        {{- end }}
+      {{- end }}
+{{- end }}

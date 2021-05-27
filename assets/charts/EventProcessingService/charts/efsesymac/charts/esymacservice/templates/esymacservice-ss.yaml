@@ -1,0 +1,509 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: esymacservice
+  labels:
+    app: esymacservice-internal-zts1
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"                                     # will be filled by chart name-chartversion from chart.yaml eg: exampleservice.0.1.0
+    release: "{{ .Release.Name }}"                                                      # Will get filled by kubernetes
+    heritage: "{{ .Release.Service }}"
+spec:
+  replicas:  {{default 1 .Values.global.EsymacServiceReplicaCount}}
+  updateStrategy:
+     type: RollingUpdate
+  serviceName: "esymacservice"
+  selector:
+     matchLabels:
+       app: esymacservice-internal-zts1
+       release: {{.Release.Name}}
+{{- if .Values.global.persistentVolume.enabled }}
+  volumeClaimTemplates:
+   - metadata:
+      name: ehdata
+     spec:
+       accessModes: ["ReadWriteOnce"]
+       storageClassName: glusterfs-storageclass
+       resources:
+        requests:
+         storage: {{ .Values.pvcStorage.esymachelperpvc }}
+   - metadata:
+      name: eydata
+     spec:
+       accessModes: ["ReadWriteOnce"]
+       storageClassName: glusterfs-storageclass
+       resources:
+        requests:
+         storage: {{ .Values.pvcStorage.esymacpvc }}
+
+{{- end }}
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: esymacservice-internal-zts1
+        release: {{.Release.Name}}
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: EPS_ESYMACSERVICE
+    spec:
+      containers:
+        - name: esymachelper
+          image: "{{ .Values.global.imageRegistry }}/esymachelper:{{ .Values.image.esymachelper.dockerTag }}"
+          imagePullPolicy: "{{ .Values.image.esymachelper.PullPolicy }}"
+          resources:
+            requests:
+              memory: {{ .Values.esymachelper.resources.requests.memory | quote }}
+              cpu: {{ .Values.esymachelper.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.esymachelper.resources.limits.memory | quote }}
+              cpu: {{ .Values.esymachelper.resources.limits.cpu | quote }}
+          env:
+          - name: "EMONITOR_ADDR"
+            value: "127.0.0.1"
+          - name: "L4GPORT"
+            value: "1234"
+          - name: "EMONITOR_PORT"
+            value: "6061"
+          - name: "DATACENTER"
+            value: "{{.Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{.Values.global.clustername}}"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+                 
+          volumeMounts:
+          - mountPath: "/persistant/storage/"
+            name: ehdata
+          - mountPath: "/opt/log/"
+            name: shared-data-ehy
+                  
+
+        - name: esymacservice-internal-zts1                                                          # name of container1 eg: examplecontainer1
+          image: "{{ .Values.global.imageRegistry }}/esymacservice:{{ .Values.image.esymacserviceimage.dockerTag }}"                # container image to be filled from values.yaml
+          imagePullPolicy: "{{ .Values.image.esymacserviceimage.PullPolicy }}"                               # can take values always,IfNotPresent
+          ports:
+             - containerPort: 6666                                          # container port to send or accept traffic
+          resources:
+            requests:
+              memory: {{ .Values.esymacservice.resources.requests.memory | quote }}
+              cpu: {{ .Values.esymacservice.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.esymacservice.resources.limits.memory | quote }}
+              cpu: {{ .Values.esymacservice.resources.limits.cpu | quote }}
+          env:
+          - name: "esymacserviceListeningIP"
+            value: "127.0.0.1"
+          - name: "esymacserviceIPPort"
+            value: "127.0.0.1:6666"
+          - name: "logRetention"
+            value: "2"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "SourceType"
+            value: "vnf1"        #sourcetype
+          - name: "Version"
+            value: "major:18.0|minor:2.0"
+          - name: "MetadataType"
+            value: "1"          #  1-> MetadataType_ZTSL,  2-> MetadataType_ONAP,  3-> MetadataType_NETACT
+          - name: "MetadataSubtype"
+            value: "2"          #  1-> MetadataSubType_FM, 2-> MetadataSubType_PM, 3-> MetadataSubType_CM
+          - name: "TarFilePath"
+            value: "./pm_adaptation.tar"
+          - name: "AdaptationPath"
+            value: "/ESYMAC/R_ESYMAC_18.9_MP1_snmp4j/extras/esymacstarter/o2ml"   #adaptation file zip file path
+          volumeMounts:
+          - mountPath: "/persistant/storage/"
+            name: ehdata
+          - mountPath: "/ESYMAC/R_ESYMAC_18.9_MP1_snmp4j/extras/esymacstarter/gmoTemp/"
+            name: eydata
+          - mountPath: "/ESYMAC/R_ESYMAC_18.9_MP1_snmp4j/3rdparty/apache-tomcat/logs/"
+            name: shared-data-apch
+          - mountPath: "/netactcerts/"
+            name: netactsecrets
+          
+
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.fluentbit.PullPolicy }}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          volumeMounts:
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+            - name: fbitconfigmap
+              mountPath: /fluent-bit/etc
+            - name: shared-data-ehy
+              mountPath: /var/log/esymac
+            - name: shared-data-pm
+              mountPath: /var/log/pm
+            - name: shared-data-fm
+              mountPath: /var/log/fm
+            - name: shared-data-apch
+              mountPath: /var/log/
+
+          env:
+            - name: FLUENTBIT_ARGS
+              value: "-c /fluent-bit/etc/fluent-bit.conf"
+            - name: TARGET_IP
+              value: "127.0.0.1"
+            - name: TARGET_PORT
+              value: "8888"
+            - name: "traceLevel"
+              value: "error"
+            - name: "logRetention"
+              value: "2"
+            - name: "logPath"
+              value: "/opt/log"
+            - name: VNFNAME
+              value: {{ .Values.global.vnfname }}
+            - name: VNFCTYPE
+              value: "{{ .Values.global.vnfctype }}"
+            - name: VNFTYPE
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFCNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name 
+
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoyimage.pullPolicy }} 
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/envoy
+            - name: certs
+              mountPath: /certs
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+          env:
+           - name: secretuserzts
+             valueFrom:
+              secretKeyRef:
+               name: {{ .Values.global.casecret }}
+               key: username
+           - name: secretpasswordzts
+             valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: password
+           - name: CNNAME
+             value: esymac
+           - name: CASERVICEFQDN
+             value: caserverservice.{{ .Release.Namespace }}.svc.cluster.local
+           - name: "EPS_ADDR"
+             value: "localhost"
+           - name: "EPS_PORT"
+             value: "6061"
+           - name: "DATACENTER"
+             value: "{{ .Values.global.datacenter }}"
+           - name: "CLUSTERNAME"
+             value: "{{ .Values.global.clustername }}"
+           - name: "METADATA_MAX_RELEASE"
+             value: "{{ .Values.global.metadata_max_release }}"
+           - name: "METADATA_MIN_RELEASE"
+             value: "{{ .Values.global.metadata_min_release }}"
+           - name: "VNFTYPE"
+             value: "{{ .Values.global.vnftype }}"
+           - name: "VNFNAME"
+             value: "{{ .Values.global.vnfname }}"
+           - name: "VNFCTYPE"
+             value: "{{ .Values.global.vnfctype }}"
+           - name: "traceLevel"
+             value: "{{ .Values.global.counteralarmtracelevel }}"
+           - name: "CHANNEL_BUFFER_SIZE"
+             value: "{{ .Values.countersenv.channelbuffsize }}"
+
+
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"] 
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           - name: NODE_NAME
+             value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulserver.servicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: "{{ .Release.Namespace }}.svc.cluster.local" 
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+          volumeMounts:
+               - name: data
+                 mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+
+        - name: cbura-sidecar
+          {{- include "cburasidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.cbura.PullPolicy }}
+          securityContext:
+            runAsUser: 2005
+          resources:
+            requests:
+              memory: {{ .Values.cbursidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.cbursidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.cbursidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.cbursidecar.resources.limits.cpu | quote }}
+          volumeMounts:
+          - name: ehdata
+            mountPath: "/ehdata"
+
+        - name: fmesymacagent-internal-{{.Values.global.clustername}}
+          image: "{{ .Values.global.imageRegistry }}/fmesymacagent:{{ .Values.image.fmesymacagentimage.dockerTag }}"
+          imagePullPolicy: "{{ .Values.image.fmesymacagentimage.PullPolicy }}"
+          ports:
+            - containerPort: 5555
+          resources:
+            requests:
+              memory: {{ .Values.fmesymacagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.fmesymacagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fmesymacagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.fmesymacagent.resources.limits.cpu | quote }}
+          env:
+          - name: "EsymacIP"
+            value: "127.0.0.1"
+          - name: "EsymacPort"
+            value: "8080"
+          - name: "L4GPORT"
+            value: "1235"
+          - name: "EsymacPassword"
+            value: "wspassword"
+          - name: "EsymacUserName"
+            value: "wsuser"
+          - name: "VnfName"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VnfType"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "EsymacAgentListenPort"
+            value: "5555"
+          - name: "logRetention"
+            value: "2"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "traceLevel"
+            value: "error"
+          - name: "metaDataFilesPath" 
+            value: "/opt/MetaData"
+          - name: "EventQueueDialIP"
+            value: "127.0.0.1"
+          - name: "EventQueueDialPort"
+            value: "8888"
+          - name: "EventDBDialIP"
+            value: "127.0.0.1"
+          - name: "EventDBPort"
+            value: "8887"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: "lms_enabled"
+            value: "{{ .Values.global.lms_service_enabled }}"
+          - name: "fluentd_hostname"
+            value: "{{ template "rel_fullname" . }}-belk-fluentd.{{ .Release.Namespace }}.svc.cluster.local"      
+                 
+          volumeMounts:
+          - mountPath: "/persistant/storage/"
+            name: ehdata
+          - mountPath: "/opt/log/"
+            name: shared-data-fm
+
+        
+        - name: pmesymacagent-internal-{{.Values.global.clustername}}
+          image: "{{ .Values.global.imageRegistry }}/pmesymacagent:{{ .Values.image.pmesymacagentimage.dockerTag }}"
+          imagePullPolicy: "{{ .Values.image.pmesymacagentimage.PullPolicy }}"
+          ports:
+             - containerPort: 5566
+          resources:
+            requests:
+              memory: {{ .Values.pmesymacagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.pmesymacagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.pmesymacagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.pmesymacagent.resources.limits.cpu | quote }}
+          env:
+          - name: "EsymacPort"
+            value: "8080"
+          - name: "EsymacPassword"
+            value: "wspassword"
+          - name: "EsymacUserName"
+            value: "wsuser"
+          - name: "EventDBPort"
+            value: "8889"
+          - name: "logRetention"
+            value: "2"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "traceLevel"
+            value: "error"
+          - name: "L4GPORT"
+            value: "1236"
+          - name: "EsymacDomainName"
+            value: "127.0.0.1"
+          - name: "EsymacOMesVersion"
+            value: "2.3"
+          - name: "EsymacVnfInstance"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: "lms_enabled"
+            value: "{{ .Values.global.lms_service_enabled }}"
+          - name: "fluentd_hostname"
+            value: "{{ template "rel_fullname" . }}-belk-fluentd.{{ .Release.Namespace }}.svc.cluster.local"
+          - name: "elk_client_batch_records_num"
+            value: "{{ .Values.global.elk_client_batch_records_num }}"          
+                 
+          volumeMounts:
+          - mountPath: "/persistant/storage/"
+            name: ehdata
+          - mountPath: "/opt/log/"
+            name: shared-data-pm
+
+
+      volumes:
+          - name: config
+            configMap:
+              name: configmapenvoyesymacservice
+          - name: certs
+            emptyDir: {}
+          - name: data
+            emptyDir: {}
+{{- if not .Values.global.persistentVolume.enabled }}
+          - name: ehdata
+            emptyDir : {}
+          - name: eydata
+            emptyDir : {}
+{{- end }}
+          - name: shared-data-envoy
+            emptyDir: {}
+          - name: shared-data-pm
+            emptyDir: {}
+          - name: shared-data-fm
+            emptyDir: {}
+          - name: shared-data-ehy
+            emptyDir: {}
+          - name: shared-data-apch
+            emptyDir: {}
+          - name: fbitconfigmap
+            configMap:
+              name: fbit-config-eps-efsesymac
+          - name: netactsecrets
+            secret:
+             secretName: netact-secret
+       
+      

@@ -1,0 +1,12 @@
+{{- if and (.Values.server.dashboard) (.Values.server.dashboard.enabled) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name.podname }}-dashboards
+  labels:
+    {{ toYaml .Values.server.dashboard.label | nindent 4}}
+    {{- include "crdb-redisio.common_labels" . | nindent 4 }}
+data:
+  {{- (.Files.Glob "dashboards/*").AsConfig | nindent 2 }}
+{{- end }}

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+metadata:
+  name: {{ .Values.name.podname }}
+  labels:
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    component: "{{ .Release.Name }}-{{ .Values.service.Component }}"
+spec:
+  ports:
+  - port: {{ .Values.service.PeerPort }}
+    name: etcd-server
+  - port: {{ .Values.service.ClientPort }}
+    name: etcd-client
+  clusterIP: None
+  selector:
+    component: "{{ .Release.Name }}-{{ .Values.service.Component }}"

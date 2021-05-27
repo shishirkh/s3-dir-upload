@@ -1,0 +1,14 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy LogProcessingService in kubernetes cluster
+engine: gotpl
+keywords:
+- LogProcessingService
+- "20.0"
+- LogProcessingService
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Main O&M Services", "SVC_NAME": "Log Processing
+  Service", "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+maintainers:
+- name: Nokia
+name: LogProcessingService
+version: 1.5.37

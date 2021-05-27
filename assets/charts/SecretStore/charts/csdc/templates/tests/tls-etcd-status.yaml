@@ -1,0 +1,63 @@
+{{- if .Values.service.tls -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .Release.Name }}-000-tls-status-test"
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+    - name: {{ .Release.Name }}-status-test
+      image: "{{ .Values.global.imageRegistry }}/sdc:3.3.11"
+      env:
+        - name: AADO_USERNAME
+          value: {{ .Values.AADO_USERNAME| quote }}
+        - name: AADO_PASSWORD
+          value: {{ .Values.AADO_PASSWORD| quote }}
+        - name: GERRIT_PROJECT
+          value: {{ .Values.GERRIT_PROJECT| quote }}
+        - name: GERRIT_BRANCH
+          value: {{ .Values.GERRIT_BRANCH| quote }}
+        - name: GERRIT_REFSPEC
+          value: {{ .Values.GERRIT_REFSPEC| quote }}
+        - name: CLIENT_PORT
+          value: {{ .Values.service.ClientPort | quote }}
+        - name: ENDPOINT_URL
+          value: {{ template "etcd.fullname" . }}.{{.Release.Namespace}}
+      volumeMounts:
+        - name: gittest 
+          mountPath: /test/
+        - name: client-cert
+          mountPath: /etc/tls/client-cert
+        - name: ca-cert
+          mountPath: /etc/tls/ca-cert
+        - name: clienttest
+          mountPath: /etc/etcd/
+      resources:
+        limits:
+          cpu: {{.Values.service.resources.requests.Cpu }}
+          memory: {{.Values.service.resources.requests.Memory }}
+        requests:
+          cpu: {{ .Values.service.resources.requests.Cpu }}
+          memory: {{ .Values.service.resources.requests.Memory }}
+      command: ["sh", "-c", "bash /test/run.sh"]
+  volumes:
+    - name: clienttest
+      configMap:
+        name: "compaas-sdc-server-configmap"
+        items:
+        - key: config
+          path: etcd.client.conf
+    - name: gittest
+      configMap:
+        name: "{{ .Release.Name }}-001-sdc-tls-status-test-configmap"
+    - name: client-cert
+      secret:
+        secretName: "sdc-client-cert-secret"
+    - name: ca-cert
+      secret:
+        secretName: "sdc-ca-cert-secret"
+
+
+  restartPolicy: Never
+{{- end -}} 

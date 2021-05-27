@@ -1,0 +1,18 @@
+{{- if .Values.rbac.create }}
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  name: {{ template "eventdb.fullname" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ template "eventdb.fullname" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "eventdb.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

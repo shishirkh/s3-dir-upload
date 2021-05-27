@@ -1,0 +1,127 @@
+# Default values for NatsServer.
+# # Author: Sudhir Pai 
+# # This is a YAML-formatted file.
+# # Declare name/value pairs to be passed into your templates.
+#
+
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ datacenter: "dc1"
+ clustername: "zts1"
+ casecret: zts1ztssecret
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnftype: zts
+ vnfname: zts1
+ vnfctype: CLM
+ counteralarmtracelevel: "error"
+
+image:
+  clustermonitorservice:
+    dockerTag: 1.5.10
+    pullPolicy: Always
+  
+  envoyimage:
+    dockerTag: 1.5.10
+    pullPolicy: Always
+
+  consulregistration:
+    dockerTag: 1.5.10
+    pullPolicy: Always
+
+  fluentbitimage:
+    dockerTag: 1.5.10
+    pullPolicy: Always
+
+  consulimage:
+   dockerTag: 1.5.10
+   pullPolicy: IfNotPresent
+
+consulserver:
+  servicename: sdservice
+
+
+consulagent:
+  consulAgentDnsIpInt: 127.0.0.1
+  consulAgentDnsPortInt: 8600
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  domainName: "default.svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+consulmetadata:
+  name: clustermonitor-server
+  labels:
+    app: clustermonitor-server
+
+configmap:
+  name: configmapenvoyclustermonitorservice
+  labels:
+    app: configmapenvoyclustermonitorservice-label
+
+consulenv:
+  ztslenvoylbregid: clustmonit-service
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.json"
+  - "--mode serve"
+  - "--v2-config-only"
+
+envoyhttpportwithtls: 8080
+envoyhttpport: 8888
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerProtocol: TCP
+
+countersenv:
+  channelbuffsize : 1000
+
+
+clustermonitor:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 1024Mi
+      cpu: 1000m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m

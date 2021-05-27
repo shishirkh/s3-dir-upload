@@ -1,0 +1,25 @@
+{{- if .Values.cbur.enabled }}
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ template "fullname" . }}-pvc
+spec:
+  storageClassName: {{.Values.backup_restore.storageClassName}}
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{.Values.backup_restore.size}}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ template "fullname" . }}-cbur-tmp-pvc
+spec:
+  storageClassName: {{.Values.backup_restore.storageClassName}}
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{.Values.cbur.cbura.tmp_size}}
+{{- end}}

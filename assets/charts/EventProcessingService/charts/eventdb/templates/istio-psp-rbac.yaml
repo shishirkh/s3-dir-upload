@@ -1,0 +1,51 @@
+{{- if .Values.istio }}
+{{- if .Values.istio.enabled }}
+apiVersion: extensions/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: {{ template "eventdb.fullname" . }}
+spec:
+  seLinux:
+    rule: RunAsAny
+  runAsUser:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  fsGroup:
+    rule: RunAsAny
+  allowedCapabilities:
+  - 'NET_ADMIN'
+  volumes:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ template "eventdb.fullname" . }}-istio-role
+  namespace: "{{.Release.Namespace}}"
+rules:
+- apiGroups:
+  - extensions
+  resourceNames:
+  - {{ template "eventdb.fullname" . }}-psp
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ template "eventdb.fullname" . }}-istio-rolebinding
+  namespace: "{{.Release.Namespace}}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ template "eventdb.fullname" . }}-istio-role
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: "{{.Release.Namespace}}"
+{{- end }}
+{{- end }}
+

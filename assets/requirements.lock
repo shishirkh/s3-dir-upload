@@ -1,0 +1,39 @@
+dependencies:
+- name: ztslenvoylb
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.19
+- name: cmserver
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.31
+- name: LogProcessingService
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.37
+- name: config
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.10
+- name: EventProcessingService
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.37
+- name: MetadataStoreService
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.37
+- name: IntegrationService
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.37
+- name: trackerservice
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.10
+- name: SecretStore
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.18
+- name: datasync
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.8
+- name: clustermonitorservice
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.10
+- name: lms
+  repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+  version: 1.5.13
+digest: sha256:39c2fae3c8d27509f0657994cbd087ffff84f9ed4ae326003e80609af24e896f
+generated: 2020-02-20T09:56:24.397633886Z

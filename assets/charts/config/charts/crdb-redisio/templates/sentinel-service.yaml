@@ -1,0 +1,19 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: configmaster-sentinel
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  type: {{ .Values.services.sentinel.type }}
+  ports:
+  - name: sentinel
+    port: {{ .Values.services.sentinel.port }}
+    targetPort: 26379
+    {{- if and (eq .Values.services.sentinel.type "NodePort") .Values.services.sentinel.nodePort }}
+    nodePort: {{ .Values.services.sentinel.nodePort }}
+    {{- end }}
+  selector:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+    type: sentinel

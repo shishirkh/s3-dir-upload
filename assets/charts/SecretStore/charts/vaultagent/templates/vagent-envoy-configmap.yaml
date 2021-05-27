@@ -1,0 +1,310 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vagentenvoyconfigmap
+  labels:
+    app: configmapenvoycmdata-label
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  envoy.yaml: |-
+    admin:
+      access_log_path: "/var/DebugTrace/EnvoySideCar/envoyaccess.log"
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+          protocol: TCP 
+    stats_flush_interval:
+      seconds: 5
+    static_resources:
+      listeners:
+      - name: umservice
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 9090
+            protocol: TCP
+        filter_chains:
+        - filters:
+          - name: envoy.tcp_proxy
+            config:
+              stat_prefix: ckey
+              cluster: umserver
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoyaccess_um.log"
+      - name: vagentapp
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+            protocol: TCP
+        filter_chains:
+        - tls_context:
+            common_tls_context:
+              tls_params:
+                tls_minimum_protocol_version: "TLSv1_2"
+              tls_certificates:
+              - certificate_chain:
+                  filename: "/certs/cert.pem"
+                private_key:
+                  filename: "/certs/key.pem"
+              validation_context:
+               trusted_ca:
+                 filename: "/certs/cacert.pem"
+              alpn_protocols: h2,http/1.1
+            require_client_certificate: true
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: vagentapp
+              stream_idle_timeout: 0s
+              route_config:
+                name: vagentapp
+                virtual_hosts:
+                - name: vagentapp
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: vagent
+                      max_grpc_timeout : "0.000s"
+                      #timeout:
+                       # seconds: 1800
+                    decorator:
+                      operation: vagentapp
+               
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-vagentapp
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoysecretstore.log"
+              generate_request_id: true
+      - name: vagentappss
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 8888
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: vagentappss
+              route_config:
+                name: vagentappss
+                virtual_hosts:
+                - name: vagentappss
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/nokia.ztsl.MetaDataStore.v1.MetaDataStore/Read"
+                    route:
+                      cluster: metadataserver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: vagentappss
+
+                  - match:
+                      prefix: "/nokia_ztsl_EventProcessingService_v1.EventProviderService"
+                    route:
+                      cluster: logreceiver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: vagentappss
+
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-vagentappss
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoy_log_md.log"
+              generate_request_id: true
+      - name: vagenteps
+        address:
+          socket_address:
+            address: 127.0.0.1
+            port_value: 6061
+            protocol: TCP
+        filter_chains:
+          filters:
+          - name: envoy.http_connection_manager
+            config:
+              codec_type: AUTO
+              stat_prefix: app
+              route_config:
+                name: vagenteps
+                virtual_hosts:
+                - name: vagenteps
+                  domains:
+                  - "*"
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: epsserver
+                      timeout:
+                        seconds: 1800
+                    decorator:
+                      operation: vagenteps
+
+                  require_tls: NONE
+              http_filters:
+              - name: envoy.router
+                config: {}
+              tracing:
+                operation_name: INGRESS
+              server_name: envoy-ingress-app
+              idle_timeout:
+                seconds: 1800
+              drain_timeout:
+                seconds: 1800
+              access_log:
+                name: envoy.file_access_log
+                config:
+                  path: "/var/DebugTrace/EnvoySideCar/envoy_eps.log"
+              generate_request_id: true
+
+      clusters:
+      - name: umserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: umserver-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}
+            port_value: 8002
+            protocol: TCP
+      - name: vagent
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 7007
+            protocol: TCP
+        http2_protocol_options: {}
+      - name: epsserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: eventreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+      - name: logreceiver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: logreceiver-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+         common_tls_context:
+            tls_params:
+             tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+               filename: "/certs/cert.pem"
+              private_key:
+               filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+               filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+      - name: metadataserver
+        type: STRICT_DNS
+        connect_timeout:
+          seconds: 1800
+        lb_policy: ROUND_ROBIN
+        dns_resolvers:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 8600
+            protocol: UDP
+        hosts:
+        - socket_address:
+            address: metadatastore-service-{{.Values.global.clustername}}.service.{{.Values.global.datacenter }}
+            port_value: 8080
+            protocol: TCP
+        tls_context:
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: "TLSv1_2"
+            tls_certificates:
+            - certificate_chain:
+                filename: "/certs/cert.pem"
+              private_key:
+                filename: "/certs/key.pem"
+            validation_context:
+              trusted_ca:
+                filename: "/certs/cacert.pem"
+        http2_protocol_options: {}
+
+     
+

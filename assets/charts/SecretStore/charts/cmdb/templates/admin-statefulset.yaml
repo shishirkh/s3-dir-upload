@@ -1,0 +1,149 @@
+{{- if ne (.Values.cluster_type) "simplex" }}
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.name.podname }}-admin
+  labels:
+    {{- include "cmdb-admin.labels" . | indent 4 }}
+    
+spec:
+  serviceName: {{ .Values.name.podname }}
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "cmdb-admin.labels" . | indent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cmdb-admin.labels" . | indent 8 }}
+        type: admin
+        admin-daemon: "yes"
+    spec:
+      securityContext:
+      {{- if .Values.rbac_enabled }}
+        runAsUser: 1773
+        runAsGroup: 1773
+        fsGroup: 1773
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+
+      containers:
+      - name: admin
+        {{- include "cmdb-admin.image" . | indent 8 }}
+        args: [ "daemon" ]
+        ports:
+        - containerPort: 6379
+          name: redisio
+        env:
+        - name: CLUSTER_TYPE
+          value: "{{ .Values.cluster_type }}"
+        - name: CLUSTER_NAME
+          value: "{{ .Values.cluster_name | default .Release.Name | trunc 32 }}"
+        {{- if .Values.admin.configAnnotation }}
+        - name: RUN_UPDATECFG
+          value: "no"
+        {{- end }}
+        {{- if .Values.admin.autoHeal.enabled }}
+        - name: AUTO_HEAL_PAUSE
+          value: {{ .Values.admin.autoHeal.pauseDelay | quote }}
+        {{- end }}
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: RBAC_ENABLED
+          value: {{ .Values.rbac_enabled | quote }}
+        - name: ADMIN_DB_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.name.podname }}-admin-secrets
+              key: redis-password
+
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /chart
+        - name: event-cm
+          mountPath: /event
+        {{- if and (.Values.admin.persistence) (.Values.admin.persistence.enabled) }}
+        - name: datadir
+          mountPath: /admin
+        {{- end }}
+        livenessProbe:
+          exec:
+            command:
+            - bash
+            - "-c"
+            - |
+              /usr/local/admin/orchestrator.py --probe=liveness --timeout=5
+          initialDelaySeconds: 300
+          periodSeconds: 10
+          timeoutSeconds: 6
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - bash
+            - "-c"
+            - |
+              /usr/local/admin/orchestrator.py --probe=readiness --timeout=5
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 6
+          failureThreshold: 3
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+
+      volumes:
+      - name: cluster-cm
+        configMap:
+          name: {{ .Values.name.podname }}-mariadb-cluster
+      - name: event-cm
+        configMap:
+          name: {{ .Values.name.podname }}-admin-event
+
+    {{- if .Values.admin.tolerations }}
+      tolerations:
+{{ toYaml .Values.admin.tolerations | indent 8 }}
+    {{- end }}
+    {{- if .Values.admin.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.admin.nodeSelector | indent 8 }}
+    {{- end }}
+      affinity:
+      {{- if .Values.admin.nodeAffinity.enabled }}
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: {{ .Values.admin.nodeAffinity.key }}
+                operator: In
+                values:
+                - {{ quote .Values.admin.nodeAffinity.value }}
+      {{- end }}
+
+  {{- if and (.Values.admin.persistence) (.Values.admin.persistence.enabled) }}
+  volumeClaimTemplates:
+    - metadata:
+        annotations:
+          "helm.sh/resource-policy": {{ default "delete" .Values.admin.persistence.resourcePolicy }}   
+        name: datadir
+        labels:
+          {{- include "cmdb-admin.labels" . | indent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.admin.persistence.accessMode | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.admin.persistence.size | quote }}
+        {{- if .Values.admin.persistence.storageClass }}
+        storageClassName: {{ .Values.admin.persistence.storageClass }}
+        {{- else if (.Values.compaas) and .Values.compaas.storageClass }}
+        storageClassName: "{{ .Values.compaas.storageClass }}"
+        {{- end }}
+  {{- end }}
+{{- end }}

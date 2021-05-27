@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "fullname" . }}-sa-admin
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "-8"
+    #hook-failed is not working. So using before-hook-creation
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: {{ template "fullname" . }}-rolebinding
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "-7"
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "fullname" . }}-sa-admin
+  namespace: "{{.Release.Namespace}}"
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ template "fullname" . }}-role
+  apiGroup: ""
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: "{{.Release.Namespace}}"
+  name: {{ template "fullname" . }}-role
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": before-hook-creation, hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+rules:
+- apiGroups: ["", "extensions", "apps","batch"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "fullname" . }}-install-kibana-jobs
+  labels:
+    app: {{ template "name" . }}
+  annotations:
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook": post-install
+    "helm.sh/hook-delete-policy": hook-succeeded
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ template "name" . }}
+    spec:
+      serviceAccountName: {{ template "fullname" . }}-sa-admin
+      restartPolicy: Never
+      volumes:
+      - name: alpinecurl
+        hostPath:
+          path: /usr/local/bin/alpinecurl
+      - name: dashboards
+        configMap:
+            #name: {{ .Release.Name }}-dashboard-configmap
+            name: {{ template "fullname" . }}-dashboard-configmap
+      containers:
+      - name: post-install-kibana-jobs
+        image: "{{ .Values.global.registry2 }}/{{ .Values.alpinecurl.image.repo }}:{{ .Values.alpinecurl.image.tag }}"
+        resources:  {{ toYaml .Values.jobResources | indent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop:
+              - all
+        volumeMounts:
+        - name: alpinecurl
+          mountPath: /alpinecurl
+        - name: dashboards
+          mountPath: /tmp
+        command:
+        - sh
+        - "-c"
+        - |
+          retries="${KIBANA_INITSCRIPTS_MAX_RETRIES:-40}"
+          until [ "$retries" -eq 0 ]
+          do
+            echo "Waiting for Kibana server: $((retries--)) remaining attempts..."
+            status=$(curl -m 3 kibana:5601/api/status| grep -cw '"overall":{"state":"green"')
+            if [[ "$status" == 1 ]]
+            then
+              for entry in /tmp/*
+              do
+                curl -X POST "kibana:5601/api/kibana/dashboards/import" -H 'kbn-xsrf: true' -H 'Content-Type: application/json' -d @$entry
+              done
+              break
+            fi
+            sleep 8
+          done
+          if [[ "$retries" == 0 ]]
+          then
+            echo "Error: Kibana is not available after ${KIBANA_INITSCRIPTS_MAX_RETRIES:-30} retries"
+            exit 1
+          fi
+---
+

@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ztslenvoylbservice
+  labels:
+    app: ztslenvoylbserviceapp
+spec:
+  selector:
+    app: {{ .Values.metadata.labels.app }}
+  clusterIP: None
+  ports:
+    - name: ckey
+      port: 9090
+      targetPort: 9090
+    - name: sftpapp
+      port: 7655
+      targetPort: 7655
+    - name: caserviceapp
+      port: 9091
+      targetPort: 9091
+    - name: cmanddsservice
+      port: 8080
+      targetPort: 8080
+    - name: datasyncapp
+      port: 8099
+      targetPort: 8099
+    - name: tracker
+      port: 7777
+      targetPort: 7777
+    - name: epslb
+      port: 8079
+      targetPort: 8079
+    - name: logreceiver
+      port: 8078
+      targetPort: 8078
+    - name: metadatastore
+      port: 8077
+      targetPort: 8077
+    - name: secstore
+      port: 7055
+      targetPort: 7055
+    - name: integrationservice
+      port: 8076
+      targetPort: 8076
+    - name: lcmcli
+      port: 8075
+      targetPort: 8075

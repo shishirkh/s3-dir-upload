@@ -1,0 +1,670 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ template "eventdb.fullname" . }}
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  serviceName: {{ template "eventdb.fullname" . }}
+  updateStrategy:
+    type: {{ .Values.updateStrategy.type }}
+  replicas: {{ .Values.replica_count }}
+  podManagementPolicy: {{ .Values.podManagementPolicy }}
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: {{ template "eventdb.fullname" . }}
+        release: "{{ .Release.Name }}"           
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: EPS_SERVICE
+{{- if .Values.podLabels }}
+{{ toYaml .Values.podLabels | indent 8 }}
+{{- end }}
+{{- if .Values.podAnnotations }}
+      annotations:
+{{ toYaml .Values.podAnnotations | indent 8 }}
+{{- end }}
+    spec:
+{{- if .Values.hostNetwork }}
+      hostNetwork: {{ .Values.hostNetwork }}
+{{- end }}
+{{- if .Values.selector }}
+{{ toYaml .Values.selector | indent 6 }}
+{{- end }}
+      {{- if .Values.antiAffinity }}
+      affinity:
+        {{- if .Values.additionalAffinities }}
+        {{- toYaml .Values.additionalAffinities | nindent 8 }}
+        {{- end }}
+        {{- if and (eq .Values.antiAffinity "hard") (not .Values.minconfig.Enabled) }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchLabels:
+                  app: {{ template "eventdb.fullname" . }}
+                  release: "{{ .Release.Name }}"
+        {{- else if or (eq .Values.antiAffinity "soft") (.Values.minconfig.Enabled) }}
+        podAntiAffinity:
+          prefferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                topologyKey: "kubernetes.io/hostname"
+                labelSelector:
+                  matchLabels:
+                    app: {{ template "eventdb.fullname" . }}
+                    release: "{{ .Release.Name }}"
+        {{- end }}
+      {{- end }}
+{{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+{{- end }}
+      containers:      
+      # cassandra-sidecar container
+      - name: cassandra-sidecar 
+        {{- if and .Values.global .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.cassandra.repository }}:{{ .Values.image.cassandra.csfTag }}"
+        {{- else if .Values.image.cassandra.registry }}
+        image: "{{ .Values.image.cassandra.registry }}/{{ .Values.image.cassandra.repository }}:{{ .Values.image.cassandra.csfTag }}"
+        {{- end }}
+        imagePullPolicy: {{ .Values.image.cassandra.pullPolicy | quote }}
+        resources:
+          {{- if and .Values.minconfig.Enabled  .Values.minconfig.overrideResources }}
+          {{- toYaml .Values.minconfig.resources | nindent 10 }}
+          {{- else }}
+         limits:
+          cpu: {{ .Values.resources.limits.cpu }}
+          memory: {{ .Values.resources.limits.memory }}
+         requests:
+            cpu: {{ .Values.resources.requests.cpu }}
+            memory: {{ .Values.resources.requests.memory }}
+          {{- end }}        
+        #lifecycle:
+        #  postStart:
+        #    exec:
+        #      command: ["/usr/sbin/sshd"]        
+        env:
+        {{- $seed_count := default 1 .Values.config.seed_count | int -}}
+        {{- $global := . }}
+        - name: CONFIG_CASSANDRA_SEEDS
+          {{- if .Values.hostNetwork }}
+          value: {{ required "You must fill \".Values.config.seeds\" with list of Cassandra seed when hostNetwork is set to true" .Values.config.seeds | quote }}
+          {{- else }}
+          value: "{{- range $i, $e := until $seed_count }}{{ template "eventdb.fullname" $global }}-{{ $i }}.{{ template "eventdb.fullname" $global }}.{{ $global.Release.Namespace }}.svc.{{ $global.Values.config.cluster_domain }},{{- end }}"
+          {{- end }}
+        #- name: NReplicas
+        #  value: "{{ .Values.replica_count }}"
+        - name: "traceLevel"                                               # TraceLevel supported values- trace, info, warn, error
+          value: "trace"
+        - name: "logRetention"                                                   # No of days for which log files shall be stored in the microservice
+          value: "{{ default "2" .Values.config.logRetention }}"
+        - name: "logPath"                                                            # Log path. Do not change
+          value: "/var/log/supervisor/"
+        - name: ETCDCTL_KEY_FILE
+          value: {{ default "/etc/etcd/ssl/etcd-client-key.pem" .Values.config.ETCDCTL_KEY_FILE | quote }}
+        - name: ETCDCTL_CERT_FILE 
+          value: {{ default "/etc/etcd/ssl/etcd-client.pem" .Values.config.ETCDCTL_CERT_FILE | quote }}
+        - name: ETCDCTL_CA_FILE
+          value: {{ default "/etc/etcd/ssl/ca.pem" .Values.config.ETCDCTL_CA_FILE | quote }}
+        - name: SS_CASSANDRA_CLUSTER_NAME
+          value: "{{ .Values.config.cluster_name }}"
+        - name: SS_CASSANDRA_DATA_CENTER
+          value: {{ default "Bengaluru" .Values.config.cluster_datacenter | quote }}
+        - name: USE_ETCD
+          value: {{ default "nouse" .Values.config.use_etcd | quote }}
+        - name: SS_CASSANDRA_SETUP_FIREWALL_RULES
+          value: "false"
+        - name: MAX_HEAP_SIZE
+          value: {{ default "128m" .Values.resources.java_heapsize | replace "i" "" | quote }}
+        - name: HEAP_NEWSIZE
+          value: {{ default "12m" .Values.resources.java_newsize | replace "i" "" | quote }}
+        - name: SS_CASSANDRA_DATADIR_LV_NAME
+          value: "CASSANDRA_DD"
+          #value: {{ default "CASSANDRA_DD" .Values.config.cassandra_datadir | quote }}
+        - name: SS_CASSANDRA_COMMITLOG_LV_NAME
+          value: "CASSANDRA_DD"
+          #value: {{ default "CASSANDRA_DD" .Values.config.cassandra_datadir | quote }}
+        - name: SS_CASSANDRA_BACKUP_LV_NAME
+          {{- if .Values.persistence.backup }}
+          {{- if .Values.persistence.backup.enabled }}
+          value: {{ default "CASSANDRA_BR" .Values.config.cassandra_backupdir | quote }}
+          {{- end }}
+          {{- else }}
+          value: "CASSANDRA_DD"
+          #value: {{ default "CASSANDRA_DD" .Values.config.cassandra_datadir | quote }}
+          {{- end }}
+        - name: SS_CASSANDRA_SUPERUSER_NAME
+          value: {{ default "suadmincass" .Values.config.cassandra_superuser | quote }}
+        - name: SS_DEPLOYMENT_TYPE
+          value: {{ default "kube" .Values.config.deployment_type | quote }}
+        #- name: CONFIG_CASSANDRA_SEEDS
+        #  value: "{{ template "eventdb.fullname" . }}-0.{{ template "eventdb.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+        - name: SS_CASSANDRA_SUPERUSER_PASS 
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "eventdb.fullname" . }}
+              key: cassandra_superpass 
+        {{- if .Values.minconfig.Enabled }}
+        - name: CASSANDRA_MIN_CONFIG 
+          value: {{ .Values.minconfig.MIN_CONFIG | quote }}
+        {{- end }}
+        - name: REDUCED_MAX_HEAP_SIZE
+          {{- if and .Values.minconfig.Enabled .Values.minconfig.overrideResources }}
+          value: {{ default "128m" .Values.minconfig.java_heapsize | regexFind "[0-9]*" | quote }}
+          {{- else }}
+          value: {{ default "128m" .Values.resources.java_heapsize | regexFind "[0-9]*" | quote }}
+          {{- end }}
+        - name: REDUCED_HEAP_NEWSIZE
+          {{- if and .Values.minconfig.Enabled .Values.minconfig.overrideResources }}
+          value: {{ default "12m" .Values.minconfig.java_newsize | regexFind "[0-9]*" | quote }}
+          {{- else }}
+          value: {{ default "12m" .Values.resources.java_newsize | regexFind "[0-9]*" | quote }}
+          {{- end }}
+        - name: RPC_SERVER_TYPE
+          value: {{ default "hsha" .Values.config.RPC_SERVER_TYPE | quote }}
+        - name: CONCURRENT_READS
+          value: {{ default "4" .Values.config.CONCURRENT_READS | quote }}
+        - name: CONCURRENT_WRITES
+          value: {{ default "4" .Values.config.CONCURRENT_WRITES | quote }}
+        - name: COMPACTION_THROUGHPUT
+          value: {{ default "0" .Values.config.COMPACTION_THROUGHPUT | quote }}
+        - name: CONCURRENT_COMPACTORS
+          value: {{ default "1" .Values.config.CONCURRENT_COMPACTORS | quote }}
+        - name: RPC_MIN_THREADS
+          value: {{ default "4" .Values.config.RPC_MIN_THREADS | quote }}
+        - name: RPC_MAX_THREADS
+          value: {{ default "4" .Values.config.RPC_MAX_THREADS | quote }}
+        - name: KEY_CACHE_SIZE
+          value: {{ default "32" .Values.config.KEY_CACHE_SIZE | quote }}
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+{{- if .Values.metrics.enabled }}
+        - name: CASSANDRA_UNIFIED_METRICS
+          value: "on"
+        - name: METRICS_AGENT_NAME
+          value: "{{ .Values.metrics.agent.name }}"
+        - name: METRICS_AGENT_VERSION
+          value: "{{ .Values.metrics.agent.version }}"
+{{- end }}
+#        {{- $hostname := default "$HOSTNAME" .Values.config.listen_address }}
+#        livenessProbe:
+#          exec:
+#            {{- if and .Values.livenessProbe.commandOverridesEnabled .Values.livenessProbe.commandOverrides  }}
+#            command: {{ .Values.livenessProbe.commandOverrides }}
+#            {{- else }}
+#            command:
+#            - bash
+#            - "-c"
+#            - |
+#              [ -f /opt/cass-tools/.lcm_scalein ] || [ -f /opt/cass-tools/.lcm_cassandra_superpass ] || /opt/cassandra/bin/cqlsh {{ $hostname }} 9042 -u $SS_CASSANDRA_SUPERUSER_NAME -p $SS_CASSANDRA_SUPERUSER_PASS -e "describe keyspaces";
+#            {{- end }}
+#          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+#          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+#          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+#          successThreshold: {{ .Values.livenessProbe.successThreshold }}
+#          failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+#        readinessProbe:
+#          exec:
+#            {{- if and .Values.readinessProbe.commandOverridesEnabled .Values.readinessProbe.commandOverrides }}
+#            command: {{ .Values.readinessProbe.commandOverrides }}
+#            {{- else }}
+#            command:
+#            - bash
+#            - "-c"
+#            - |
+#              [ -f /opt/cass-tools/.lcm_scalein ] || [ -f /opt/cass-tools/.lcm_cassandra_superpass ] || /opt/cassandra/bin/cqlsh {{ $hostname }} 9042 -u $SS_CASSANDRA_SUPERUSER_NAME -p $SS_CASSANDRA_SUPERUSER_PASS -e "describe keyspaces";
+#            {{- end }}
+#          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+#          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+#          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+#          successThreshold: {{ .Values.readinessProbe.successThreshold }}
+#          failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+        ports:
+        - name: intra-node
+          containerPort: 7000
+        - name: tls-intra-node
+          containerPort: 7001
+        - name: jmx
+          containerPort: 7199
+        - name: cql
+          containerPort: {{ default 9042 .Values.config.ports.cql }}
+        volumeMounts:
+        - name: shared-data
+          mountPath: "/opt/cassandra/logs"
+#        - name: etcd 
+#          mountPath: /etc/etcd 
+        - name: {{ template "eventdb.fullname" . }}
+          mountPath: /config
+        - name: {{ default "data" .Values.volumeClaim.name | quote }}
+          mountPath: /CASSANDRA_DD
+        {{- if .Values.persistence.backup }}
+        {{- if .Values.persistence.backup.enabled }}
+        - name: {{ default "backup" .Values.volumeClaim.backup.name | quote }}
+          mountPath: "{{ default "/CASSANDRA_BR" .Values.config.cassandra_backupdir }}/cassandra/backup"
+        {{- end }}
+        {{- end }}    
+      
+      
+      # zts-eventdb-internal container
+      - name: {{ template "eventdb.fullname" . }}                                                           
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.eventdb.repository }}:{{ .Values.image.eventdb.dockerTag }}"            
+        imagePullPolicy: "{{ .Values.image.eventdb.pullPolicy }}"                            
+        ports:
+          - containerPort: {{ default "8989" .Values.image.eventdb.port }}
+        securityContext:
+          runAsUser: 2008
+          runAsGroup: 2009
+        resources:
+          requests:
+            memory: {{ .Values.eventdb.resources.requests.memory | quote }}
+            cpu: {{ .Values.eventdb.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.eventdb.resources.limits.memory | quote }}
+            cpu: {{ .Values.eventdb.resources.limits.cpu | quote }}
+        env:
+          - name: "traceLevel"                                          # TraceLevel supported values- trace, info, warn, error
+            value: "{{ default "error" .Values.config.traceLevel }}"
+          - name: "logRetention"                                        # No of days for which log files shall be stored in the microservice
+            value: "{{ default "2" .Values.config.logRetention }}"
+          - name: "logPath"                                             # Log path. Do not change
+            value: "{{ default "/opt/log" .Values.config.logPath }}"
+          - name: "metaDataFilesPath"                                   # MetaDataFiles path. Do not change 
+            value: "{{ default "/opt/MetaData" .Values.config.metaDataFilesPath }}"
+          - name: "eventDBPort"
+            value: "{{ default "8989" .Values.image.eventdb.port }}" 
+          - name: "metaDataPort"
+            value: "{{ default "9999" .Values.config.metaDataPort }}"
+          - name: "cassandraDC"
+            value: "{{ default "Bengaluru" .Values.config.cluster_datacenter }}"
+          - name: "cassUser"
+            value: "{{ default "suadmincass" .Values.config.cassandra_superuser }}"
+          - name: "cassPass"
+            value: "{{ default "eXRfeGszOWI=" .Values.config.cassandra_superpass }}"
+          - name: "replicationFactor"
+            value: "{{ .Values.config.replicationFactor }}" 
+          - name: "consistencyLevel"
+            value: "{{ .Values.config.consistencyLevel }}" 
+          - name: "replicaCount"
+            value: "{{ .Values.replica_count }}"
+          - name: "TTL"
+            value: "{{ default "7200" .Values.config.TTL }}"
+          - name: "MapMaxLength"
+            value: "{{ default "4" .Values.config.MapMaxLength }}"
+          - name: "MountPath"
+            value: "{{ .Values.config.mountPath }}" 
+          - name: "POD_NAME"
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: "POD_IP"
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: "sleepTime"
+            value: "{{ .Values.config.sleepTime }}"
+          - name: "batchInsertCount"
+            value: "{{ .Values.config.batchInsertCount }}"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: AGENT_LIST
+            value: "http,sftp"
+          - name: PARTITIONMAXROWCOUNT
+            value: "100000"
+          - name: PARTITION_CREATION_INTERVAL
+            value: "10"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "LOGWRAPPER"
+            value: "YES"
+          - name: "MAX_WORKERS"
+            value: "100"
+          - name: "MAX_QUEUE"
+            value: "1000"
+                
+        volumeMounts:
+        - mountPath: "{{ .Values.config.mountPath }}" 
+          name: multi-pv-storage
+        - name: shared-data
+          mountPath: "/opt/log"
+
+      
+      # envoy-container 
+      - name: envoy-sidecar 
+        {{- include "envoysidecar.image" . | indent 8 }}
+        imagePullPolicy: {{ .Values.image.envoy.pullPolicy }}
+        securityContext:
+          runAsUser: 70
+        resources:
+          requests:
+            memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+            cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+            cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+        command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+        ports:
+          - containerPort: {{ .Values.envoyports.envoyContainerPort }}
+            protocol: {{ .Values.envoyports.envoyContainerProtocol }}
+        volumeMounts:
+          - name: config
+            mountPath: /etc/envoy
+          - name: certs
+            mountPath: /certs
+          - name: shared-data-envoy
+            mountPath: /var/DebugTrace/EnvoySideCar
+        env:
+          - name: secretuserzts
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: username
+          - name: secretpasswordzts
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: password
+          - name: CNNAME
+            value: {{ .Values.consulenv.ztslenvoylbregid }}-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local
+          - name: CASERVICEFQDN
+            value: caserverservice.{{.Release.Namespace}}.svc.cluster.local
+          - name: "EPS_ADDR"
+            value: "localhost"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: "traceLevel"
+            value: "{{ .Values.global.counteralarmtracelevel }}"
+          - name: "CHANNEL_BUFFER_SIZE"
+            value: "{{ .Values.countersenv.channelbuffsize }}"
+          - name: "NAMESPACE"
+            valueFrom:
+             fieldRef:
+              fieldPath: metadata.namespace
+
+      # fluent-bit-container
+      - name: fluent-bit   
+        {{- include "logsidecar.image" . | indent 8 }}
+        imagePullPolicy: {{ .Values.image.fluentbit.pullPolicy }}
+        securityContext:
+          runAsUser: 2006
+        resources:
+          requests:
+            memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+            cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+            cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+        volumeMounts:
+            - name: shared-data
+              mountPath: /var/log
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+            - name: config-volume
+              mountPath: /fluent-bit/etc
+        env:
+            - name: FLUENTBIT_ARGS
+              value: "-c /fluent-bit/etc/fluent-bit.conf"
+            - name: TARGET_IP
+              value: "127.0.0.1"
+            - name: TARGET_PORT
+              value: "8888"
+            - name: "traceLevel"
+              value: "error"
+            - name: "logRetention"
+              value: "2"
+            - name: "logPath"
+              value: "/opt/log"
+            - name: VNFNAME
+              value: {{ .Values.global.vnfname }}
+            - name: VNFCTYPE
+              value: "{{ .Values.global.vnfctype }}"
+            - name: VNFTYPE
+              value: {{ .Values.global.vnftype }} 
+            - name: "VNFCNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+                  
+      # consulagent-container
+      - name: {{ .Values.containers.consulagentName }}
+        {{- include "consulagentsidecar.image" . | indent 8 }}
+        imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+        securityContext:
+          runAsUser: 70
+        resources:
+          requests:
+            memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+            cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+            cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+        command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"] 
+        env:
+         - name: MY_POD_IP
+           valueFrom:
+             fieldRef:
+               fieldPath: status.podIP
+         - name: PODNAME
+           valueFrom:
+             fieldRef:
+               fieldPath: metadata.name
+         - name: NAMESPACE
+           valueFrom:
+             fieldRef:
+               fieldPath: metadata.namespace
+         - name: NODE_NAME
+           value: {{ .Values.consulmetadata.name }}
+         - name: NODE_SERVICE_NAME
+           value: {{ .Values.consulserver.servicename }}
+         - name: SERVICE_DOMAIN_NAME
+           value: {{ .Values.consulagentenv.servicedomainName }}
+         - name: DOMAIN_NAME
+           value: "{{ .Release.Namespace }}.svc.cluster.local" 
+         - name: DATACENTER_VALUE
+           value: {{ .Values.global.datacenter }}
+         - name: CLIENT_BIND_IP
+           value: {{ .Values.consulagentenv.agentbindip }}
+         - name: SERVER_NUM
+           value: "3"
+           
+        volumeMounts:
+             - name: data
+               mountPath: /tmp/consul
+        ports:
+          - containerPort: 8500
+            name: ui-port
+          - containerPort: 8400
+            name: alt-port
+          - containerPort: 53
+            name: udp-port
+          - containerPort: 8600
+            name: udp-port-dns
+          - containerPort: 8443
+            name: https-port
+          - containerPort: 8080
+            name: http-port
+          - containerPort: 8301
+            name: serflan
+          - containerPort: 8302
+            name: serfwan
+          - containerPort: 8600
+            name: consuldns
+          - containerPort: 8300
+            name: agent      
+     
+      # registrationcontainer 
+      - name: "registrationcontainer" 
+        {{- include "consulregistrationsidecar.image" . | indent 8 }}
+        imagePullPolicy: {{ .Values.image.consulregistration.pullPolicy }}
+        securityContext:
+          runAsUser: 11
+        resources:
+          requests:
+            memory: {{ .Values.registration.resources.requests.memory | quote }}
+            cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.registration.resources.limits.memory | quote }}
+            cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+        env:
+          - name: "SDSFQDN"
+            value: "127.0.0.1"         
+          - name: "ZTSNAME"
+            value: {{ .Values.global.clustername }}
+          - name: "SERVICENAME"
+            value: "{{ .Values.consulenv.ztslenvoylbregid }}"
+          - name: MY_NODE_NAME
+            valueFrom:
+             fieldRef:
+               fieldPath: metadata.name
+          
+        command: ["sh","consulreg.sh"]
+      volumes:
+          - name: certs
+            emptyDir: {}
+          - name: data 
+            emptyDir: {}
+          - name: multi-pv-storage
+            persistentVolumeClaim:
+             claimName: eventdb-pvc-claim
+          - name: config
+            configMap:
+              name: configmapenvoyeventdb
+          - name: shared-data
+            emptyDir: {}
+          - name: shared-data-envoy
+            emptyDir: {}
+          - name: config-volume
+            configMap:
+              name: fluent-bit-config-eps-eventdb
+          - name: {{ template "eventdb.fullname" . }}
+            configMap:
+              name: {{ template "eventdb.fullname" . }}
+              defaultMode: 420
+              
+     
+      
+      # cbur container 
+      {{- if .Values.cbur.enabled }}
+      - name: cbura-sidecar
+        {{- if and .Values.global .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.cbur.image.repository }}:{{ .Values.cbur.image.csfTag }}"
+        {{- else if .Values.cbur.image.registry }}
+        image: "{{ .Values.cbur.image.registry }}/{{ .Values.cbur.image.repository }}:{{ .Values.cbur.image.csfTag }}"
+        {{- end }}
+        imagePullPolicy: {{ .Values.cbur.image.PullPolicy }}
+        {{- if .Values.cbur.securityContext }}
+        securityContext:
+          runAsUser: {{ default 1000 .Values.cbur.securityContext.runAsUser }}
+          runAsGroup:  {{ default 1000 .Values.cbur.securityContext.runAsGroup }}
+          fsGroup: {{ default 1000 .Values.cbur.securityContext.fsGroup }}
+        {{- end }}
+        resources:
+{{ toYaml .Values.cbur.resources | indent 10 }}
+        volumeMounts:
+        {{- if .Values.persistence.backup }}
+        {{- if .Values.persistence.backup.enabled }}
+        - mountPath: {{ default "backup" .Values.volumeClaim.backup.name | quote }}
+          name: {{ default "backup" .Values.volumeClaim.backup.name | quote }}
+        {{- else }}
+        - mountPath: {{ default "data" .Values.volumeClaim.name | quote }}
+          name: {{ default "data" .Values.volumeClaim.name | quote }}
+        {{- end }}
+        {{- else }}
+        - mountPath: {{ default "data" .Values.volumeClaim.name | quote }} 
+          name: {{ default "data" .Values.volumeClaim.name | quote }}
+        {{- end }}
+      {{- end }} #cbur.enabled
+#      volumes:
+#      - name: etcd 
+#        hostPath:
+#          path: /etc/etcd
+
+    ## Add serviceAccount if rbac role to be created
+    {{- if .Values.rbac.create }}
+      serviceAccountName: {{ template "eventdb.fullname" . }}
+    {{- end }}
+      hostnetwork: {{ .Values.hostnetwork }}
+      securityContext:
+        runAsUser: {{ default 818 .Values.securityContext.runAsUser }}
+        runAsGroup:  {{ default 818 .Values.securityContext.runAsGroup }}
+        fsGroup: {{ default 818 .Values.securityContext.fsGroup }}
+  volumeClaimTemplates:
+  - metadata:
+      name: {{ default "data" .Values.volumeClaim.name | quote }}
+      labels:
+        app: {{ template "eventdb.fullname" . }}
+        release: "{{ .Release.Name }}"
+        heritage: "{{ .Release.Service }}"
+    spec:
+      accessModes:
+        - {{ .Values.persistence.accessMode | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.size | quote }}
+    {{- if .Values.compaas }}
+      storageClassName: "{{ .Values.compaas.storageClass }}"
+    {{- else if .Values.persistence.storageClass }}
+      storageClassName: "{{ .Values.persistence.storageClass }}"
+    {{- end }}
+  {{- if .Values.persistence.backup }}
+  {{- if .Values.persistence.backup.enabled }}
+  - metadata:
+      name:  {{ default "backup" .Values.volumeClaim.backup.name | quote }}
+      labels:
+        app: {{ template "eventdb.fullname" . }}
+        release: "{{ .Release.Name }}"
+        heritage: "{{ .Release.Service }}"
+    spec:
+      accessModes: [ {{ .Values.persistence.backup.accessMode }} ]
+    {{- if .Values.compaas }}
+      storageClassName: {{ .Values.compaas.storageClass }}
+    {{- else if .Values.persistence.backup.storageClass }}
+      storageClassName: "{{ .Values.persistence.backup.storageClass}}"
+    {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.backup.size }}
+  {{- end }}
+  {{- end }}

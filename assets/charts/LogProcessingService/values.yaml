@@ -1,0 +1,85 @@
+global:
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets:
+  name: art-regcred
+ clustername: "zts1"
+ datacenter: "dc1"
+ casecret: zts1ztssecret
+ esymacip: 127.0.0.1
+ esymacport: 8080
+ vnfname: zts1
+ vnftype: ZTS
+ ipv6interface: disable
+ jobhookenable: true
+ jobtimeout: 900
+ metadata_max_release: "20"
+ metadata_min_release: "2.0"
+ postbackup: 0
+ postrestore: 0
+ prebackup: 0
+ prerestore: 0
+ terminationGracePeriodSeconds: 30
+#set for false to use emptyDir 
+ persistentVolume:
+  enabled: true
+ DestinationType:
+   splunk: true
+   sftp: true
+  
+  
+#mention all docker tags here for subcharts to ensure logService individual Deployment
+
+
+tags:
+  splunk: false
+  sftp: true
+
+logreceiver:
+  consulagent:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 512Mi
+        cpu: 250m
+  logreceiver:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 2000m
+  logagent:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 2000m
+  envoysidecar:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 4096Mi
+        cpu: 1000m
+  registration:
+    resources:
+      requests:
+        memory: 8Mi
+        cpu: 5m
+      limits:
+        memory: 256Mi
+        cpu: 250m
+  splunkagent:
+    resources:
+      requests:
+        memory: 16Mi
+        cpu: 10m
+      limits:
+        memory: 4096Mi
+        cpu: 2000m

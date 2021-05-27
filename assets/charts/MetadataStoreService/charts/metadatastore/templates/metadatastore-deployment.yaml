@@ -1,0 +1,317 @@
+# Author: Venkat Masuldari
+# This is a YAML-formatted file.
+# POD Deployment file to deploy ZT-VNF Extension metadatastore 
+# The below is metadatastore-deployment.yamlfor deployment of the metadatastore
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: metadatastore-internal-zts1
+  labels:
+    app: metadatastore-internal-zts1
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"         # will be filled by chart name-chartversion from chart.yaml eg: exampleservice.0.1.0
+    release: "{{ .Release.Name }}"                          # Will get filled by kubernetes
+    heritage: "{{ .Release.Service }}"
+spec:
+  replicas: {{default 1 .Values.Replicas}}       # number of replicated pods to be created 
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: metadatastore-internal-zts1
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: METADATASERVICE
+    spec:
+      hostname: metadatastore-pod                 # Optional, hostname of the exampleservice , fill in values.yaml
+      
+      containers:  ###################### metadatastore #######################################################################################
+        - name: metadatastore-internal-zts1        # name of container1 eg: examplecontainer1
+          image: "{{ .Values.global.imageRegistry }}/metadata:{{ .Values.image.metadataimage.dockerTag }}"    # container image to be filled from values.yaml
+          imagePullPolicy: "{{ .Values.image.metadataimage.pullPolicy }}"                               # can take values always,IfNotPresent
+          ports:
+             - containerPort: 9999 # container port to send or accept traffic
+          resources:
+            requests:
+              memory: {{ .Values.metadatastore.resources.requests.memory | quote }}
+              cpu: {{ .Values.metadatastore.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.metadatastore.resources.limits.memory | quote }}
+              cpu: {{ .Values.metadatastore.resources.limits.cpu | quote }}
+          env:
+          - name: "metadatastoreListeningIP"
+            value: "127.0.0.1"
+          - name: "metadatastoreIPPort"
+            value: "127.0.0.1:9999"
+          - name: "logRetention"
+            value: "2"
+          - name: "traceLevel"                                               # TraceLevel supported values- trace, info, warn, error
+            value: "{{ default "error" .Values.config.traceLevel }}"
+          - name: "logPath"
+            #value: "/go/src/log"
+            value: "/opt/log"
+          - name: "metaDataFilesPath"    # MetaDataFiles path. Do not change 
+            value: "/opt/metadataDB"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+         
+          volumeMounts:
+          - mountPath: "/opt/metadataDB"
+            name: multi-pv-storage
+          - name: shared-data
+            mountPath: "/opt/log"
+        
+###################### envoy-container #######################################################################################
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoy.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+          - containerPort: {{ .Values.envoyports.envoyContainerPort }}
+          protocol: {{ .Values.envoyports.envoyContainerProtocol }}
+          volumeMounts:
+          - name: config
+            mountPath: /etc/envoy
+          - name: certs
+            mountPath: /certs
+          - name: shared-data-envoy
+            mountPath: "/var/DebugTrace/EnvoySideCar"
+          env:
+            - name: secretuserzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: username
+            - name: secretpasswordzts
+              valueFrom:
+               secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: password
+            - name: CNNAME
+              value: "metadatastore-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+            - name: CASERVICEFQDN
+              value: "caserverservice.{{.Release.Namespace}}.svc.cluster.local"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: "EPS_ADDR"
+              value: "localhost"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "DATACENTER"
+              value: "{{ .Values.global.datacenter }}"
+            - name: "CLUSTERNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "{{ .Values.global.vnfctype }}"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+            - name: "CHANNEL_BUFFER_SIZE"
+              value: "{{ .Values.countersenv.channelbuffsize }}"
+ 
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.fluentbit.pullPolicy}}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          env:
+            - name: TARGET_IP
+              value: "127.0.0.1"
+            - name: TARGET_PORT
+              value: "8888"
+            - name: "traceLevel"
+              value: "trace"
+            - name: "logRetention"
+              value: "2"
+            - name: "logPath"
+              value: "/opt/log"
+            - name: VNFNAME
+              value: {{ .Values.global.vnfname }}
+            - name: VNFCTYPE
+              value: "{{ .Values.global.vnfctype }}"
+            - name: VNFTYPE
+              value: "zts"
+            - name: "VNFCNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+              - name: shared-data
+                mountPath: /var/log
+              - name: shared-data-envoy
+                mountPath: /var/DebugTrace/EnvoySideCar
+              - name: config-volume
+                mountPath: /fluent-bit/etc
+
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulimage.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           #- name: NODE_NAME
+           #  value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulagent.service.serverservicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: "{{ .Release.Namespace }}.svc.cluster.local"
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+           - name: SERVER_NUM
+             value: "3"
+          volumeMounts:
+            - name: data
+              mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+
+
+        - name: cbura-sidecar
+          {{- include "cburasidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.cbura.PullPolicy }}
+          securityContext:
+            runAsUser: 2005        
+          volumeMounts:
+          - name: multi-pv-storage
+            mountPath: "/multi-pv-storage"
+          resources:
+            requests:
+              memory: {{ .Values.cbursidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.cbursidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.cbursidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.cbursidecar.resources.limits.cpu | quote }}
+
+        - name: "registerationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.consulregistration.pullPolicy}}
+          securityContext:
+             runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SERVICENAME"
+              value: "metadatastore-service"
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: "{{ .Values.global.clustername}}"
+          command: ["sh","consulreg.sh"]
+      volumes:
+          - name: multi-pv-storage
+            persistentVolumeClaim:
+              claimName: metadatastorepersistance-pvc-claim
+          - name: config
+            configMap:
+              name: configmapenvoymetadatastore
+          - name: shared-data-envoy
+            emptyDir: {}
+          - name: certs
+            emptyDir: {}
+          - name: data
+            emptyDir: {}
+          - name: shared-data
+            emptyDir: {}
+          - name: config-volume
+            configMap:
+              name: fluent-bit-config-metadata
+
+     

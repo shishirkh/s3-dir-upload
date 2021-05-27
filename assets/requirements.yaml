@@ -1,0 +1,93 @@
+dependencies:
+  - name: ztslenvoylb
+    version: 1.5.19
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    tags:
+     - envoy
+     - ztsl
+
+  - name: cmserver
+    version: 1.5.31
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: cmserver.enabled
+    tags:
+     - cm
+     - ztsl
+
+  - name: LogProcessingService
+    version: 1.5.37
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: LogProcessingService.enabled
+    tags:
+    - fm
+    - pm
+    - ztsl
+
+  - name: config
+    version: 1.5.10
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: config.enabled
+    tags:
+    - ztsl
+
+  - name: EventProcessingService
+    version: 1.5.37
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: EventProcessingService.enabled
+    tags:
+    - fm
+    - pm
+    - ztsl
+
+  - name: MetadataStoreService
+    version: 1.5.37
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: MetadataStoreService.enabled
+    tags:
+    - fm
+    - pm
+    - ztsl
+
+  - name: IntegrationService
+    version: 1.5.37
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: IntegrationService.enabled
+    tags:
+    - fm
+    - pm
+    - ztsl
+
+  - name: trackerservice
+    version: 1.5.10
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: trackerservice.enabled
+    tags:
+    - ztsl
+
+  - name: SecretStore
+    version: 1.5.18
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: SecretStore.enabled
+    tags:
+    - ztsl
+
+  - name: datasync
+    version: 1.5.8
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: datasync.enabled
+    tags:
+    - ztsl
+
+  - name: clustermonitorservice
+    version: 1.5.10
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: clustermonitorservice.enabled
+    tags:
+    - ztsl
+
+  - name: lms
+    version: 1.5.13
+    repository: https://artifactory-blr1.int.net.nokia.com/artifactory/Corepass_helm-virtual
+    condition: global.lms_service_enabled
+    tags:
+    - ztsl

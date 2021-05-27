@@ -1,0 +1,5 @@
+### global registry
+global:
+ registry: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ registry1: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ registry2: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net

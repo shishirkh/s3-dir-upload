@@ -1,0 +1,105 @@
+## ref: https://confluence.app.alcatel-lucent.com/display/plateng/HELM+Application+Deployment+-+LIFECYCLE#HELMApplicationDeployment-LIFECYCLE-RelocatableChart
+### global registry
+global:
+ # This registry is used for elasticsearch-curator image
+ registry: csf-docker-delivered.repo.lab.pl.alcatel-lucent.com
+ # This registry is used for kubectl image
+ registry1: csf-docker-delivered.repo.lab.pl.alcatel-lucent.com
+ seccompAllowedProfileNames: docker/default
+ seccompDefaultProfileName: docker/default
+curator:
+  image: 
+    repo: lms/belk-efkc/elk_c
+    tag: 5.7.6-19.12.0
+  ImagePullPolicy: "IfNotPresent"
+  resources:
+    limits:
+      cpu: "120m"
+      memory: "120Mi"
+    requests:
+      cpu: "100m"
+      memory: "100Mi"
+  enabled: true
+  schedule: "0 1 * * *"
+  configMaps:
+    # Delete indices older than 7 days
+    action_file_yml: |-
+      ---
+      actions:
+        1:
+          action: delete_indices
+          description: "Delete indices older than 7 (based on index name)"
+          options:
+            timeout_override:
+            continue_if_exception: False
+            disable_action: False
+            ignore_empty_list: True
+          filters:
+          - filtertype: age
+            source: name
+            direction: older
+            timestring: '%Y.%m.%d'
+            unit: days
+            unit_count: 7
+        ##When cbur is enabled for elasticsearch,following section can be uncommented to configure deletion of old snapshots.
+        ## Curator cronjob should be scheduled to run after backup cronjob.
+        #2:
+        #  action: delete_snapshots
+        #  description: "Delete snapshot older than 5 days (based on index name)"
+        #  options:
+        #    repository: es_backup
+        #    ignore_empty_list: True
+        #  filters:
+        #  - filtertype: age
+        #    source: name
+        #    direction: older
+        #    timestring: '%Y.%m.%d'
+        #    unit: days
+        #    unit_count: 5
+    # Having config_yaml WILL override the other config
+    config_yml: |-
+      ---
+      client:
+        # communicating elasticsearch via SG certificates
+        certificate: '/etc/elasticsearch-curator/certs/root-ca.pem'
+        hosts:
+        # <es>.<namespace>
+        - elasticsearch
+        http_auth: 'admin:admin'
+        master_only: 'false'
+        port: 9200
+        # ssl_no_validate property should be 'false' when you are using SG
+        ssl_no_validate: 'true'
+        timeout: '60'
+        url_prefix: ''
+        # use_ssl property should be true when you are using SG.
+        use_ssl: 'false'
+      logging:
+        blacklist:
+        - elasticsearch
+        - urllib3
+        logfile: ''
+        logformat: default
+        loglevel: INFO
+
+kubectl:
+  image:
+    repo: lms/belk-efkc/kubectl
+    tag: v1.14.10-nano
+
+jobResources:
+  requests:
+    cpu: 200m
+    memory: 500Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+searchguard:
+ enable: false
+ # Create base64 encoding for keystore, keystorepasswd, truststore, truststorepasswd file and provide to below variables.
+ # base64 encoding for passwords use below command
+ # echo -n <string in double quotes> | base64
+ # base64 encoding for files  use below command
+ # base64 <filename>  | tr -d '\n'
+ base64_ca_certificate: <base64-rootcapem>

@@ -1,0 +1,70 @@
+{{- if .Values.cbur.enabled -}}
+{{- if not .Values.service.tls -}}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: {{ .Values.name.podname }}
+  labels:
+    app: {{ .Values.name.podname }}
+    release: {{ .Release.Name | quote }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    component: "{{ .Release.Name }}-{{ .Values.service.Component }}"
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.name.podname }}
+  volumes:
+  - tmpdatavol
+  backend:
+    mode: "{{ .Values.cbur.backendMode }}"
+  cronSpec: "{{ .Values.cbur.cronSpec }}"
+  scheduleEnable: true
+  maxiCopy: {{ .Values.cbur.maxiCopy }}
+  brOption: 1
+  k8sType: statefulset
+  hooks: 
+    - name: {{ .Values.name.podname }}
+      commands:
+        preBackupCmd: ["sh", "-c", "ETCDCTL_API=3 etcdctl --user root:$RBAC_PWD snapshot save /tmpdatavol/etcd_snapshot.db; date '+%Y%m%d_%H%M%S'  > /tmpdatavol/cluster_token "]
+        postBackupCmd: ["sh", "-c", "rm -rf /tmpdatavol/*"]
+        preRestoreCmd: ["sh", "-c", ""]
+        postRestoreCmd: ["sh", "-c", "if [ -e /tmpdatavol/etcd_snapshot.db ]; then cp /tmpdatavol/etcd_snapshot.db /tmpdatavol/cluster_token /var/run/etcd/; fi; rm -rf /tmpdatavol/*; kill 1"]
+  backupHistory: []
+{{- end -}}
+
+
+{{- if .Values.service.tls -}}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: {{ .Values.name.podname }}
+  labels:
+    app: {{ .Values.name.podname }}
+    release: {{ .Release.Name | quote }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    component: "{{ .Release.Name }}-{{ .Values.service.Component }}"
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.name.podname }}
+  volumes:
+  - tmpdatavol
+  backend:
+    mode: "{{ .Values.cbur.backendMode }}"
+  cronSpec: "{{ .Values.cbur.cronSpec }}"
+  scheduleEnable: true
+  maxiCopy: {{ .Values.cbur.maxiCopy }}
+  brOption: 1
+  k8sType: statefulset
+  hooks: 
+    - name: {{ .Values.name.podname }}
+      commands:
+        preBackupCmd: ["sh", "-c", "ETCDCTL_API=3 etcdctl --endpoints https://$(hostname).${SET_NAME}:{{ .Values.service.ClientPort }} --user root:$RBAC_PWD --cert /var/run/etcd/tls/client-cert/..data/client.pem --key /var/run/etcd/tls/client-cert/..data/client-key.pem --cacert /var/run/etcd/tls/ca-cert/..data/ca.pem snapshot save /tmpdatavol/etcd_snapshot.db; date '+%Y%m%d_%H%M%S'  > /tmpdatavol/cluster_token "]
+        postBackupCmd: ["sh", "-c", "rm -rf /tmpdatavol/*"]
+        preRestoreCmd: ["sh", "-c", ""]
+        postRestoreCmd: ["sh", "-c", "if [ -e /tmpdatavol/etcd_snapshot.db ]; then cp /tmpdatavol/etcd_snapshot.db /tmpdatavol/cluster_token /var/run/etcd/; fi; rm -rf /tmpdatavol/*; kill 1"]
+  backupHistory: []
+{{- end -}}
+{{- end -}}

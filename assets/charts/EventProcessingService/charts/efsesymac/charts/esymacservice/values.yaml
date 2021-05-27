@@ -1,0 +1,173 @@
+# Default values for EventProcessingService.
+# Author: Naveen Kumar T G
+# This is a YAML-formatted file.
+# Declare name/value pairs to be passed into your templates.
+#
+
+global:
+ #imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imageRegistry: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets: 
+  name: art-regcred
+ casecret: zts1ztssecret
+ consulAgentDnsIpInt: 10.254.18.254
+ consulAgentDnsPortInt: 8600
+ persistentVolume:
+  enabled: true
+ clustername: "zts1"
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnfctype: "EFS" 
+ vnfname: "zts1" #to remove
+ vnftype: "ZTS" #to remove
+ counteralarmtracelevel: "error"
+ elk_client_batch_records_num: 50
+
+countersenv:
+  channelbuffsize : 1000
+
+image:
+  esymacserviceimage:
+    dockerTag: 1.5.37
+    PullPolicy: IfNotPresent
+
+  envoyimage:
+    PullPolicy: IfNotPresent
+  initcontainersimage:
+    PullPolicy: IfNotPresent
+  consul:
+   pullPolicy: Always
+
+  consulregistration:
+   pullPolicy: Always
+
+  esymachelper:
+   dockerTag: 1.5.37
+   pullPolicy: Always
+
+  fmesymacagentimage:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  pmesymacagentimage:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  fluentbit:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  cbura:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+
+pvcStorage:
+ esymacpvc: 2Gi 
+ esymachelperpvc: 1Gi
+configmap:
+  name: configmapenvoyesymacservice
+  labels:
+    app: configmapenvoyesymacservice-label
+
+ExternalIP: 10.96.173.96
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.json"
+  - "--mode serve"
+  - "--v2-config-only"
+consulmetadata:
+  name: cmserver
+  labels:
+    app: cmserverapp
+
+consulserver:
+ servicename: sdservice
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  domainName: "default.svc.cluster.local"
+  agentbindip: "0.0.0.0"
+
+
+esymachelper:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 10m
+    limits:
+      memory: 1024Mi
+      cpu: 1000m
+
+esymacservice:
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+cbursidecar:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+fmesymacagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+pmesymacagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+
+consulagent:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+

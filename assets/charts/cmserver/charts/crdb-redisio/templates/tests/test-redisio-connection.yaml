@@ -1,0 +1,57 @@
+---
+#
+# Tests that a connection can be made to the service URI
+#
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-test-redisio-connection
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  restartPolicy: Never
+  containers:
+  - name: test-ping-master
+    {{- include "cm-crdb-redisio.server.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      /usr/bin/redis-cli -a "$REDIS_PASSWORD" -u {{ include "cm-crdb-redisio.db.uri" . }} ping | grep -i PONG
+    env:
+    - name: REDIS_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ template "cm-crdb-redisio.fullname" . }}-redis-secrets
+          key: redis-password
+{{- if (gt (int .Values.server.count) 1) }}
+  - name: test-ping-replica
+    {{- include "cm-crdb-redisio.server.image" . | indent 4 }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 100m
+      limits:
+        memory: 64Mi
+        cpu: 100m
+    command:
+    - bash
+    - "-c"
+    - |
+      /usr/bin/redis-cli -a "$REDIS_PASSWORD" -u {{ include "cm-crdb-redisio.db_readonly.uri" . }} ping | grep -i PONG
+    env:
+    - name: REDIS_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ template "cm-crdb-redisio.fullname" . }}-redis-secrets
+          key: redis-password
+{{- end }}

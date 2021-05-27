@@ -1,0 +1,83 @@
+{{- if eq .Values.fluentd.kind "DaemonSet" }}
+apiVersion: extensions/v1beta1
+kind: DaemonSet 
+metadata:
+  name: {{ template "fullname" .  }}-daemonset
+  labels:
+    k8s-app: {{ template "fullname" .  }}-es
+    version: v1.22
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        k8s-app: {{ template "fullname" .  }}-es
+        kubernetes.io/cluster-service: "true"
+        version: v1.22
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+        checksum/config: {{ include (print $.Template.BasePath "/fluentd_configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.fluentd.affinity }}
+      affinity:
+{{ toYaml .Values.fluentd.affinity | indent 8 }}
+      {{- end }}
+      {{- if .Values.fluentd.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.fluentd.nodeSelector | indent 8 }}
+      {{- end }}
+      tolerations:
+      {{- if .Values.fluentd.tolerations }}
+{{ toYaml .Values.fluentd.tolerations | indent 8 }}
+      {{- else }}
+      - operator: 'Exists'
+        effect: 'NoExecute'
+      {{- end }}
+      serviceAccount: {{ template "fullname" .  }}-serviceaccount
+      containers:
+      - name: {{ template "fullname" .  }}-daemonset
+        image: {{ .Values.global.registry }}/{{.Values.fluentd.image.repo}}:{{.Values.fluentd.image.tag}}
+        imagePullPolicy: {{.Values.fluentd.ImagePullPolicy}}
+        {{- if .Values.fluentd.securityContext.privileged }}
+        securityContext:
+          privileged: {{.Values.fluentd.securityContext.privileged}}
+        {{- end }}
+        resources:
+{{ toYaml .Values.fluentd.resources | indent 10 }}
+        env:
+          - name: HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: SYSTEM
+            value: "{{.Values.fluentd.EnvVars.system}}"
+          - name: SYSTEMID
+            value: "{{.Values.fluentd.EnvVars.systemId}}"
+        volumeMounts:
+{{ toYaml .Values.fluentd.volumeMounts | indent 8 }}
+        {{- if .Values.fluentd.fluentd_certificates.enabled }}
+        - name: ssl
+          mountPath: "/etc/td-agent/certs"
+          readOnly: true
+        {{- end }}
+        - name: config-volume 
+          mountPath: /etc/td-agent/ 
+      volumes:
+      {{- if .Values.fluentd.fluentd_certificates.enabled }}
+      - name: ssl
+        secret:
+          secretName: {{ template "fullname" . }}
+          items:
+{{- range $key, $val := .Values.fluentd.fluentd_certificates.data }}
+          - key: {{  $key }}
+            path: {{ $key }}
+{{- end }}
+      {{- end }}
+{{ toYaml .Values.fluentd.volumes | indent 6 }}
+      - name: config-volume 
+        configMap:
+          name: {{ template "fullname" .  }}-config
+{{- end }}

@@ -1,0 +1,6 @@
+dependencies:
+- name: efsmonitor
+  version: 0.2.0
+- name: esymacservice
+  version: 0.2.0
+

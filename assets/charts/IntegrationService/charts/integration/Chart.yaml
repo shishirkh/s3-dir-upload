@@ -1,0 +1,8 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy ZT VNF Extension integration pods in IntegrationService.
+engine: gotpl
+maintainers:
+- name: Nokia
+name: integration
+version: 0.1.10

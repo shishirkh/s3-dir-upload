@@ -1,0 +1,164 @@
+# Default values for FMService.
+# Author: Venkat Masuldari
+# This is a YAML-formatted file.
+# Declare name/value pairs to be passed into your templates.
+#
+
+global:
+ #imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imageRegistry: corepaas-docker-local.bhisoj70.apac.nsn-net.net
+ imagePullSecrets: 
+  name: ztsl-helm-registry
+ consulAgentDnsIpInt: 127.0.0.1
+ consulAgentDnsPortInt: 8600
+ casecret: zts1ztssecret
+ clustername: "zts1"
+ datacenter: "dc1"
+ caservicename: caserverservice.default.svc.cluster.local
+ metadata_max_release: "19.0"
+ metadata_min_release: "0.5"
+ vnfname: zts1
+ vnfctype: "IM"
+ vnftype: "ZTS"
+ counteralarmtracelevel: "error"
+
+countersenv:
+  channelbuffsize : 1000
+
+consulenv:
+  ztslenvoylbregid: integration-service # [ eg: ztslenvoylbregid: "lcmserver-service" ]
+
+consulagent:
+  service:
+    name: sdserviceagent-integration
+    serverservicename: sdservice
+    labels:
+      app: sdserviceagent-integration-label
+    type: NodePort
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 512Mi
+      cpu: 250m
+
+
+containers:
+  consulagentName: consulagent-container
+
+consulagentenv:
+  servicedomainName: "svc.cluster.local"
+  domainName: "default.svc.cluster.local"
+  datacenter: "dc1"
+  agentbindip: "0.0.0.0"
+  severnum: "3"
+
+envoyports:
+  envoyContainerPort: 8080
+  envoyContainerProtocol: TCP
+
+image:
+  integrationserviceimage:
+    dockerTag: 1.5.37 
+    PullPolicy: Always
+  ztssettingsserviceimage:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  dynamicadaptationimage:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  envoy:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  fluentbit:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  consulimage:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  consulregistration:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+  cbura:
+    dockerTag: 1.5.37
+    PullPolicy: Always
+
+imagePullSecrets:
+  name: ztsl-helm-registry
+
+configmap:
+  name: configmapenvoyintegration
+  labels:
+    app: configmapenvoyintegration-label
+
+ExternalIP: 10.96.173.77
+
+envoyargs:
+  - "--config-path /etc/envoy/envoy.json"
+  - "--mode serve"
+  - "--v2-config-only"
+
+ztssettings:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 10m
+    limits:
+      memory: 2048Mi
+      cpu: 1000m
+
+dynamicadaptation:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 10m
+    limits:
+      memory: 2048Mi
+      cpu: 1000m
+
+integration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 10m
+    limits:
+      memory: 2048Mi
+      cpu: 1000m
+
+envoysidecar:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+fluentbit:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 2048Mi
+      cpu: 500m
+
+cbursidecar:
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+registration:
+  resources:
+    requests:
+      memory: 8Mi
+      cpu: 5m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+

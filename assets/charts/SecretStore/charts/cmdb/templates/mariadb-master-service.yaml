@@ -1,0 +1,22 @@
+{{- if and (gt (int .Values.maxscale.count) 0) .Values.geo_redundancy.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.mariadb_master.name | default (printf "%s-mariadb-master" (include "cmdb.fullname" .)) | quote }}
+  labels:
+    {{- include "cmdb-mariadb.labels" . | indent 4 }}
+spec:
+  type: {{ .Values.services.mariadb_master.type }}
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: mysql
+    {{- if and (eq .Values.services.mariadb_master.type "NodePort") (.Values.services.mariadb_master.nodePort) }}
+    nodePort: {{ .Values.services.mariadb_master.nodePort }}
+    {{- end }}
+  selector:
+    {{- include "cmdb-mariadb.labels" . | indent 4 }}
+    type: mariadb
+    mariadb-master: "yes"
+{{- end }}

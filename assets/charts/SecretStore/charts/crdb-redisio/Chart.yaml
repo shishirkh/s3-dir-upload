@@ -1,0 +1,23 @@
+appVersion: crdb-redisio-2.7-2_redis-5.0.5
+description: Redis is an open source (BSD licensed), in-memory data structure store,
+  used as a database, cache and message broker. It supports data structures such as
+  strings, hashes, lists, sets, sorted sets with range queries, bitmaps, hyperloglogs
+  and geospatial indexes with radius queries. Redis has built-in replication, Lua
+  scripting, LRU eviction, transactions and different levels of on-disk persistence,
+  and provides high availability via Redis Sentinel and automatic partitioning with
+  Redis Cluster.
+engine: gotpl
+home: http://nok.it/CRDB
+icon: http://nok.it/CSF-DB_icon
+keywords:
+- redis
+- redis.io
+- database
+- crdb
+- 'X-COMPAAS: { "CATEGORY": "Databases", "SVC_NAME": "Redis (opensource)", "SVC_TYPE":
+  "CRDB", "SVC_SCOPE": [ "PRIVATE" ] }'
+maintainers:
+- email: csf-osdb-domains@list.nokia.com
+  name: CSF CRDB Team
+name: crdb-redisio
+version: 5.3.1

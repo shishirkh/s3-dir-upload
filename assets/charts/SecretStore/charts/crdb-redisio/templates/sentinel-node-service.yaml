@@ -1,0 +1,18 @@
+---
+{{- if (and .Values.sentinel.enabled (gt (int .Values.server.count) 1)) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name.podname }}-sentinel-nodes
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: sentinel
+    port: 26379
+  selector:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+    type: sentinel
+{{- end }}

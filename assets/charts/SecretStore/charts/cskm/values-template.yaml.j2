@@ -1,0 +1,252 @@
+---
+global:
+  ## Registry for skm image
+  registry: "{{ (registryInfo | default("")).artifactoryUrl | default(model.properties.registryInfo.properties.artifactoryUrl.default) }}"
+  ## Registry for cbur image
+  registry1: ""
+  ## Registry for kubectl image
+  registry2: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+  ## Registry for busybox
+  registry3: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+
+imageRepo: "skm/1582"
+imageTag: "2.9.2-1"
+imagePullPolicy: IfNotPresent
+
+## CSKM Parameters
+CLUSTER_NAME: "cskm"
+
+# If backend is file, only 1 pod is allowed. File doesn't support HA mode.
+#
+# IMPORTANT. When you are planning use HA mode (more then 1 pod) you need to set
+# ha_enabled in BACKEND_CONFIG and VAULT_CLUSTER_ADDR, VAULT_API_ADDR in envVariables.
+# See CSKM 'Configure CSKM Backends in BCMT' confluence page for example.
+CLUSTER_SIZE: {{ (imageInfo | default("")).replicaCount | default(model.properties.imageInfo.properties.replicaCount.default) }}
+
+# - type: backend type could be "file", "csdc", "cmdb", "other"
+# - initContainerEnabled: Init container waits till backend service will be
+#   available. Now supported only for csdc and cmdb backend. Set to True if
+#   you want to enable this functionality.
+# - serviceName: address or name of backend service
+# - servicePort: port of backend service
+backend:
+  type: "{{ (backendInfo | default("")).backendType | default(model.properties.backendInfo.properties.backendType.default) }}"
+  initContainerEnabled: {{ (backendInfo | default("")).initContainerEnabled | default(model.properties.backendInfo.properties.initContainerEnabled.default) }}
+  serviceName: "{{ (backendInfo | default("")).serviceName | default(model.properties.backendInfo.properties.serviceName.default) }}"
+  servicePort: {{ (backendInfo | default("")).servicePort | default(model.properties.backendInfo.properties.servicePort.default) }}
+
+## BACKEND_CONFIG - hcl config file for Vault. Will be used on Vault startup.
+## By default configuration with file backend is enabled.
+## Example configurations for CSDC and CMDB is also provided.
+
+## CSDC backend (Etcd).
+# BACKEND_CONFIG: "storage \"etcd\" { address  = \"https://your-release-csdc.your-namespace.svc:2379\" tls_ca_file = \"/etc/tls/ca-cert/ca.pem\" tls_cert_file = \"/etc/tls/client-cert/client.pem\" tls_key_file = \"/etc/tls/client-cert/client-key.pem\" etcd_api = \"v3\" } listener \"tcp\" { address = \"0.0.0.0:8200\" tls_key_file = \"/opt/vault/tls/tls.key\" tls_cert_file=\"/opt/vault/tls/tls.crt\"} disable_mlock = true"
+
+## CMDB backend (MariaDb)
+# BACKEND_CONFIG: "storage \"mysql\" { address = \"your-release-mysql.your-namespace.svc.cluster.local:3306\" username = \"vault\" password = \"vault\" database = \"vault\" } listener \"tcp\" { address = \"0.0.0.0:8200\" tls_key_file = \"/opt/vault/tls/tls.key\" tls_cert_file=\"/opt/vault/tls/tls.crt\" } disable_mlock = true"
+
+## File backend (on persistent volume)
+BACKEND_CONFIG: "{{ (backendInfo | default("")).vaultConfig | default(model.properties.backendInfo.properties.vaultConfig.default) }}"
+
+# Persistent storage for file backend. Change doPvClaim to False if you are not using file backend
+backendFileStorage:
+  class: "{{ (resourcesInfo | default("")).backendStorageClass | default(model.properties.resourcesInfo.properties.backendStorageClass.default) }}"
+  size: "{{ (resourcesInfo | default("")).backendFileSize | default(model.properties.resourcesInfo.properties.backendFileSize.default) }}"
+
+service:
+  type: "{{ (service | default("")).type | default(model.properties.service.properties.type.default) }}"
+  port: {{ (service | default("")).port | default(model.properties.service.properties.port.default) }}
+
+rbac:
+  create: true
+
+# Preserve backup PVC on delete?
+preserve_cskm_pvc: {{ (cskmPersistenceInfo | default("")).preserveCskmPVC | default(model.properties.cskmPersistenceInfo.properties.preserveCskmPVC.default) }}
+
+# Resources for busybox container:
+initBusyBoxContainer:
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+## Deprecated. Audit log is enabling if logging.auditToStdoutEnabled or logging.auditToStdoutEnabled
+# set to True
+#enableAuditLog: "disable"
+
+
+## Deprecated. use logging.systemLogLevel
+#vaultLogLevel: "info"
+
+
+## Logging in unified format
+#
+# What is logging
+# - Vault audit
+# - system: vault stdout and stderr, output cskm scripts like from unseal
+# - alarms: if vault unhealthy
+# - metrics: number of request to vault per minute
+#
+# Where it is logging:
+# - container stdout
+# - local file
+logging:
+  # Send vault audit log to stdout
+  auditToStdoutEnabled: {{ (logging | default("")).auditToStdoutEnabled | default(model.properties.logging.properties.auditToStdoutEnabled.default) }}
+  # Send vault audit log to file
+  auditToFileEnabled: {{ (logging | default("")).auditToFileEnabled | default(model.properties.logging.properties.auditToFileEnabled.default) }}
+  # Send vault and cskm scripts output to stdout
+  systemToStdoutEnabled: {{ (logging | default("")).systemToStdoutEnabled | default(model.properties.logging.properties.systemToStdoutEnabled.default) }}
+  # Send vault and cskm scripts output to file
+  systemToFileEnabled: {{ (logging | default("")).systemToFileEnabled | default(model.properties.logging.properties.systemToFileEnabled.default) }}
+  # Log level of system (vault) logs. Allowed values: trace, debug, info, warn, err
+  systemLogLevel: "{{ (logging | default("")).systemLogLevel | default(model.properties.logging.properties.systemLogLevel.default) }}"
+  # Send Alarms to stdout
+  alarmsToStdotEnabled: {{ (logging | default("")).alarmsToStdotEnabled | default(model.properties.logging.properties.alarmsToStdotEnabled.default) }}
+  # Send Alarms to file
+  alarmsToFileEnabled: {{ (logging | default("")).alarmsToFileEnabled | default(model.properties.logging.properties.alarmsToFileEnabled.default) }}
+  # Send Metrics to stdout
+  metricsToStdotEnabled: {{ (logging | default("")).metricsToStdotEnabled | default(model.properties.logging.properties.metricsToStdotEnabled.default) }}
+  # Send Metrics to file
+  metricsToFileEnabled: {{ (logging | default("")).metricsToFileEnabled | default(model.properties.logging.properties.metricsToFileEnabled.default) }}
+  # Local log file parameters (default location /opt/vault/logs/unified_log.log)
+  filePath: "{{ (logging | default("")).filePath | default(model.properties.logging.properties.filePath.default) }}"
+  numOfFiles: "{{ (logging | default("")).numOfFiles | default(model.properties.logging.properties.numOfFiles.default) }}"
+  fileSizeBytes: "{{ (logging | default("")).fileSizeBytes | default(model.properties.logging.properties.fileSizeBytes.default) }}"
+
+
+## File storage for logs
+logStorage:
+  doPvClaim: True
+  class: "{{ (resourcesInfo | default("")).logStorageClass | default(model.properties.resourcesInfo.properties.logStorageClass.default) }}"
+  size: "{{ (resourcesInfo | default("")).logFileSize | default(model.properties.resourcesInfo.properties.logFileSize.default) }}"
+
+
+livenessProbe:
+  enabled: {{ (livenessProbe | default("")).enabled | default(model.properties.livenessProbe.properties.enabled.default) }}
+  initialDelaySeconds: {{ (livenessProbe | default("")).initialDelaySeconds | default(model.properties.livenessProbe.properties.initialDelaySeconds.default) }}
+  periodSeconds: {{ (livenessProbe | default("")).periodSeconds | default(model.properties.livenessProbe.properties.periodSeconds.default) }}
+  failureThreshold: {{ (livenessProbe | default("")).failureThreshold | default(model.properties.livenessProbe.properties.failureThreshold.default) }}
+  standbyok: {{ (livenessProbe | default("")).standbyok | default(model.properties.livenessProbe.properties.standbyok.default) }}
+  uninitok: {{ (livenessProbe | default("")).uninitok | default(model.properties.livenessProbe.properties.uninitok.default) }}
+  sealedok: {{ (livenessProbe | default("")).sealedok | default(model.properties.livenessProbe.properties.sealedok.default) }}
+
+readinessProbe:
+  enabled: {{ (readinessProbe | default("")).enabled | default(model.properties.readinessProbe.properties.enabled.default) }}
+  initialDelaySeconds: {{ (readinessProbe | default("")).initialDelaySeconds | default(model.properties.readinessProbe.properties.initialDelaySeconds.default) }}
+  periodSeconds: {{ (readinessProbe | default("")).periodSeconds | default(model.properties.readinessProbe.properties.periodSeconds.default) }}
+  failureThreshold: {{ (readinessProbe | default("")).failureThreshold | default(model.properties.readinessProbe.properties.failureThreshold.default) }}
+  standbyok: {{ (readinessProbe | default("")).standbyok | default(model.properties.readinessProbe.properties.standbyok.default) }}
+  uninitok: {{ (readinessProbe | default("")).uninitok | default(model.properties.readinessProbe.properties.uninitok.default) }}
+  sealedok: {{ (readinessProbe | default("")).sealedok | default(model.properties.readinessProbe.properties.sealedok.default) }}
+
+
+## You and add there any environment variable supported by Vault
+# Use $(POD_IP) variable for pod ip address
+envVariables:
+#  - name:  VAULT_CLUSTER_ADDR
+#    value: "https://$(POD_IP):8201"
+#  - name: VAULT_API_ADDR
+#    value: "https://$(POD_IP):8200"
+
+
+# To disable TLS for Vault REST API set this variable to True.
+# IMPORTANT: You also need to add tls_disable = 1 in Vault configuration
+# defined in BACKEND_CONFIG variable inside listener {} section.
+# See HashCorp Vault documentation for format of server configuration file
+tlsDisabled: {{ (apiInfo | default("")).tlsDisabled | default(model.properties.apiInfo.properties.tlsDisabled.default) }}
+
+
+# Placeholders for secrets. Don't change those values.
+secrets:
+  unslkey_base64: bm8tc2VjcmV0Cg==
+  token_base64: bm8tdG9rZW4=
+
+
+## Resources for CSKM container.
+# Consider to increase them for higher performance:
+# - cpu for higher request rate
+# - memory for larger cache. Also consider set cache_size parameter in BACKEND_CONFIG
+resources:
+  requests:
+    memory: {{ (resourcesInfo | default("")).memory | default(model.properties.resourcesInfo.properties.memory.default) }}
+    cpu: {{ (resourcesInfo | default("")).cpu | default(model.properties.resourcesInfo.properties.cpu.default) }}
+  limits:
+    memory: {{ (resourcesInfo | default("")).memory | default(model.properties.resourcesInfo.properties.memory.max) }}
+    cpu: {{ (resourcesInfo | default("")).cpu | default(model.properties.resourcesInfo.properties.cpu.max) }}
+
+
+## Post-install job debugging options
+
+# Delay in the end of post-install job in sec. Will help to post-install job exist longer.
+# You will have more time to examinate the job logs
+secondsAfterPostInstall: {{ (secondsAfterPostInstall | default("")).secondsAfterPostInstall | default(model.properties.secondsAfterPostInstall.properties.secondsAfterPostInstall.default) }}
+# Set to True to see trace output from post-install job log.
+# WARNING: When True it will expose Vault secrets - root token and unseal key to log.
+# Use this option only when troubleshooting.
+postInstallTraceEnabled: {{ (postInstallTraceEnabled | default("")).postInstallTraceEnabled | default(model.properties.postInstallTraceEnabled.properties.postInstallTraceEnabled.default) }}
+
+
+## CBUR backup settings
+
+cbur:
+  enabled: true
+  backendMode: "{{ (resourcesInfo | default("")).backendMode | default(model.properties.resourcesInfo.properties.backendMode.default) }}"
+  cronSpec : "{{ (resourcesInfo | default("")).cronSpec | default(model.properties.resourcesInfo.properties.cronSpec.default) }}"
+  brOption: "{{ (resourcesInfo | default("")).brOption | default(model.properties.resourcesInfo.properties.brOption.default) }}"
+  maxCopy: "{{ (resourcesInfo | default("")).maxCopy | default(model.properties.resourcesInfo.properties.maxCopy.default) }}"
+
+  image:
+    repository: "cbur/cbura"
+    tag: "1.0.3-983"
+    pullPolicy: "IfNotPresent"
+
+  securityContext:
+    runAsUser: 1000
+
+  backupStorage:
+    size: "{{ (resourcesInfo | default("")).backupVolumeSize | default(model.properties.resourcesInfo.properties.backupVolumeSize.default) }}"
+    class: "{{ (resourcesInfo | default("")).backupStorageClass | default(model.properties.resourcesInfo.properties.backupStorageClass.default) }}"
+
+
+kubectl:
+  image:
+    repo: tools/kubectl
+    tag: v1.10.3
+    pullPolicy: "IfNotPresent"
+
+
+# Flag for CSKM startup mode. Available values:
+# 1 - Vault starts automatically and initialize and unseal itself. (default)
+# 0 - Vault starts but stays not initialized and sealed. Admin should to initialization and unsealing from outside of pod.
+# -1 - Vault is not started. This mode is intended for troubleshooting if pod is crushing on startup. In this
+#      mode pod started and mount persistent volumes. You can join the CSKM container and check logs from previous runs
+#      on the persistent volume.
+autoInitUnseal: "1"
+
+
+# user defined script to configure vault. The post-install job will pass as env variables:
+# 1 - cskm service name
+# 2 - root token
+# 3 - vault rest api protocol: https or http
+userScript: |
+
+  # Uncomment this code if you need to debug user script
+  # WARNING: Use debug ouput only for solving the problem and coment it out after. Debug output
+  # will expose vault root token to stdout.
+  # set -x
+  # echo "Values from post install job: ${1} ${2} ${3}"
+
+  # The following curl commands are samples for the admin to enable and configure K8S auth method
+  # Please customize them when you want to use K8S auth method.
+
+  # curl -v --insecure -X POST --header "X-Vault-Token:${2}" --data '{"type" :"kubernetes","description": "Login with K8S RBAC"}' ${3}://${1}:8200/v1/sys/auth/kubernetes
+
+  # curl -v --insecure -X POST --header "X-Vault-Token:${2}" --data '{"kubernetes_host":"172.16.1.9:8443","kubernetes_ca_cert": "-----BEGINCERTIFICATE-----\n.....\n-----ENDCERTIFICATE-----"}' https://${1}:8200/v1/auth/kubernetes/config
+
+  # curl -v --insecure -X POST --header "X-Vault-Token:${2}" --data '{"bound_service_account_names": "*", "bound_service_account_namespaces": "default", "policies": ["dev", "prod"], "max_ttl": 1800000}' https://${1}:8200/v1/auth/kubernetes/role/your_role_name
+
+  # curl --insecure -X LIST --header "X-Vault-Token:${2}" ${3}://${1}:8200/v1/auth/kubernetes/role

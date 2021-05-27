@@ -1,0 +1,18 @@
+---
+{{- if .Values.sentinel.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "config-crdb-redisio.fullname" . }}-sentinel-nodes
+  labels:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: sentinel
+    port: 26379
+  selector:
+    {{- include "config-crdb-redisio.common_labels" . | indent 4 }}
+    type: sentinel
+{{- end }}

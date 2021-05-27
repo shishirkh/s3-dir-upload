@@ -1,0 +1,14 @@
+{{- if .Values.curator.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "fullname" . }}
+  labels:
+    app: {{ template "name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+data:
+  actions.yml: {{ toYaml .Values.curator.configMaps.action_file_yml | indent 2 }}
+  curator.yml: {{ toYaml .Values.curator.configMaps.config_yml | indent 2 }}
+{{- end }}

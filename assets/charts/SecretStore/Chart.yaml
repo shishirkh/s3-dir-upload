@@ -1,0 +1,14 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy SecretStore in kubernetes cluster
+engine: gotpl
+keywords:
+- SS
+- "20.0"
+- SS
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Security Services", "SVC_NAME": "Secrets Repo Service",
+  "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+maintainers:
+- name: Nokia
+name: SecretStore
+version: 1.5.18

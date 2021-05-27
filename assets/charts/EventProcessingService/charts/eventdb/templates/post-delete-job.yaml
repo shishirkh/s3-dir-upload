@@ -1,0 +1,128 @@
+{{- if or .Values.deleteJob.auto_remove_pvc (.Values.deleteJob.auto_remove_secret) -}}
+## If rbac enabled create ServiceAccount, ClusterRole, and ClusterRoleBinding for the  post-delete hook
+{{- if .Values.rbac.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "eventdb.fullname" . }}-saadmin
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+---
+kind: Role 
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ template "eventdb.fullname" . }}-cradmin
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+  annotations:
+    # This is what defines this resource as a hook. Without this line, the
+    # job is considered part of the release.
+    # If there're multiple hooks, may define differnent hook-weight value.
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+rules:
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims", "secrets"]
+  verbs: ["get", "list", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ template "eventdb.fullname" . }}-namespace-admin
+  namespace: "{{.Release.Namespace}}"
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: {{.Release.Name}}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+subjects:
+- kind: ServiceAccount
+#  name: {{ template "eventdb.fullname" . }}-saadmin
+  name: default
+  namespace: "{{.Release.Namespace}}"
+roleRef:
+  kind: Role
+  name: {{ template "eventdb.fullname" . }}-cradmin
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Release.Name }}-delete-jobs"
+  labels:
+    app: {{ template "eventdb.fullname" . }}
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": {{ .Values.admin.hook_delete_policy | quote }}
+spec:
+#  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: {{ template "eventdb.fullname" . }}
+        release: {{ .Release.Name }}
+      {{- if .Values.istio }}
+      {{- if .Values.istio.enabled }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+      {{- end }}
+      {{- end }}
+    spec:
+    ## if rbac enabled use the created service account
+#      {{- if .Values.rbac.enabled }}
+#      serviceAccountName: {{ template "eventdb.fullname" . }}-saadmin
+#      {{- end }}
+      restartPolicy: Never
+      containers:
+      {{- if .Values.deleteJob.auto_remove_pvc }}
+      - name: post-delete-pvc
+        {{- if and .Values.global .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- else if .Values.admin.image.registry }}
+        image: "{{ .Values.admin.image.registry}}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- end }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          kubectl delete pvc --namespace {{ .Release.Namespace }} -l release={{ .Release.Name }}
+#          kubectl delete secrets --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+      {{- end }}
+      {{- if .Values.deleteJob.auto_remove_secret }}
+      - name: {{ .Release.Name }}-post-delete-secrets
+        {{- if and .Values.global .Values.global.imageRegistry }}
+        image: "{{ .Values.global.imageRegistry }}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- else if .Values.admin.image.registry }}
+        image: "{{ .Values.admin.image.registry}}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.csfTag }}"
+        {{- end }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - "kubectl delete secrets --namespace {{ .Release.Namespace }} -l app={{ template "eventdb.fullname" . }}"
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+      {{- end }}
+{{- end }}

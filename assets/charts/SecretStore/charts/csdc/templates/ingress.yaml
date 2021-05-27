@@ -1,0 +1,35 @@
+{{- if .Values.ingress.enabled -}}
+{{- $releaseName := .Release.Name -}}
+{{- $servicePort := .Values.service.ClientPort -}}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+  {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- if .Values.ingress.sso }}
+    csdc.ingress.kubernetes.io/configuration-snippet: |
+     set_by_lua $session_secret 'return os.getenv("LUA_RESTY_SESSION_SECRET")';
+      access_by_lua_block {
+        local paas = require "paas"
+        local res = paas.checkAuth()
+      }
+  {{- end }}
+  labels:
+    app: {{ .Values.name.podname }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    component: "{{ .Values.service.name }}"
+    heritage: "{{ .Release.Service }}"
+    release: "{{ .Release.Name }}"
+  name: {{ printf "%s.%s.%.0f" .Release.Namespace $releaseName $servicePort }}
+spec:
+  rules:
+  - host:
+    http:
+      paths:
+      - backend:
+          serviceName: {{ .Values.name.podname }}
+          servicePort: {{ printf "%.0f" $servicePort }}
+        path: {{ .Values.ingress.path }}
+{{- end }}

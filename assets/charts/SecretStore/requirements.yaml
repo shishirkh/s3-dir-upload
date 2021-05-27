@@ -1,0 +1,8 @@
+dependencies:
+- name: csdc
+  version: 2.1.8
+  condition: csdc.enabled
+- name: cmdb
+  version: 7.2.1
+- name: cskm
+  version: 4.10.0

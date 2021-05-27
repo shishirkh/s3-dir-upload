@@ -1,0 +1,421 @@
+Author: Zoheb Akhtar
+# This is a YAML-formatted file.
+# POD Deployment file to deploy ZT-VNF Extension eventreceiver
+# The below is eventreceiver-deployment.yamlfor deployment of the eventreceiver
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: logreceiver
+  labels:
+    app: logreceiver-{{.Values.global.clustername}}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"                                     # will be filled by chart name-chartversion from chart.yaml eg: exampleservice.0.1.0
+    release: "{{ .Release.Name }}"                                                      # Will get filled by kubernetes
+    heritage: "{{ .Release.Service }}"
+spec:
+  serviceName: "logreceiver"
+  replicas: {{default 2 .Values.Replicas}}                                              # number of replicated pods to be created 
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # how many pods we can add at a time
+      maxUnavailable: 1 # maxUnavailable define how many pods can be unavailable during the rolling update
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: logreceiver-{{.Values.global.clustername}}
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: LPS_SERVICE
+    spec:
+      hostname: logreceiver-pod                                      # Optional, hostname of the exampleservice , fill in values.yaml
+      
+      containers:
+        - name: logreceiver-internal-{{.Values.global.clustername}}                                                   # name of container1 eg: examplecontainer1
+          image: "{{ .Values.global.imageRegistry }}/logreceiver:{{ .Values.image.logreceiverimage.dockerTag }}"                # container image to be filled from values.yaml
+          imagePullPolicy: "{{ .Values.image.logreceiverimage.PullPolicy }}"                               # can take values always,IfNotPresent
+          ports:
+             - containerPort: 6611                                          # container port to send or accept traffic
+          resources:
+            requests:
+              memory: {{ .Values.logreceiver.resources.requests.memory | quote }}
+              cpu: {{ .Values.logreceiver.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.logreceiver.resources.limits.memory | quote }}
+              cpu: {{ .Values.logreceiver.resources.limits.cpu | quote }}
+          env:
+          - name: "LogStoreHome"
+            value: "/opt/logstore"
+          - name: "logreceiverListeningIP"
+            value: "127.0.0.1"
+          - name: "logReceiverListenerPort"
+            value: "6611"
+          - name: "eventqueueDialIP"
+            value: "127.0.0.1"
+          - name: "eventqueueDialPort"
+            value: "8888"
+          - name: "eventdbDialPort"
+            value: "8888"
+          - name: "eventdbDialIP"
+            value: "127.0.0.1"
+          - name: "traceLevel"          # TraceLevel supported values- trace, info, warn, error
+            value: "error"          
+          - name: "logRetention"
+            value: "2"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "L4GLEVEL"
+            value: "ERROR"
+          - name: "MaximumRetriesOnErrors"
+            value: "5"
+          - name: "ContextTimeOutInMinutes"
+            value: "3"
+          - name: "EnableLogDB"
+            value: "{{ .Values.global.DestinationType.splunk }}"
+          - name: "IsLogReciever"
+            value: "true"
+          - name: "TimeStampGap"
+            value: "15"
+          - name: "LogRetentionPeriod"
+            value: "1440"
+          - name: "MinLogRetentionPeriod"
+            value: "60"
+          - name: "PVUsageCheckPeriod"
+            value: "5"
+          - name: "ArchRetentionPeriod"
+            value: "10080"
+          {{ if or .Values.global.DestinationType.splunk .Values.global.DestinationType.elastic }}
+          - name: "NBIEnabled"
+            value: "true"
+          {{ end }}
+          - name: "PODNAME"
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          volumeMounts:
+          - mountPath: "/opt/logstore"
+            name: logstore-pv-storage
+          - mountPath: "/opt/streamstore"
+            name: streamstore
+        
+
+
+        - name: logagent-internal-{{.Values.global.clustername}}                                                       # name of container1 eg: examplecontainer1
+          image: "{{ .Values.global.imageRegistry }}/logagent:{{ .Values.image.logagentimage.dockerTag }}"                # container image to be filled from values.yaml
+          imagePullPolicy: {{ .Values.image.logagentimage.PullPolicy }}                               # can take values always,IfNotPresent
+          ports:
+             - containerPort: 6789                                          # container port to send or accept traffic
+          resources:
+            requests:
+              memory: {{ .Values.logagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.logagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.logagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.logagent.resources.limits.cpu | quote }}
+          env:
+          - name: "LogPushTimeInterval"
+            value: "60"
+          - name: "DestinationConfigPullTimeInterval"
+            value: "60"
+          - name: "DestinationRetryTimeInterval"
+            value: "60"
+          - name: "LogRetentionPeriod"
+            value: "60"
+          - name: "envoyhttpport"
+            value: "8888"
+          - name: "sftplocalport"
+            value: "{{ .Values.sftplocalport}}"
+          - name: "sftplocalip"
+            value: "{{ .Values.sftplocalip}}"
+          - name: "logRetention"
+            value: "2"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "L4GLEVEL"
+            value: "ERROR"
+          - name: "L4GMAXSIZE"
+            value: "10M"
+          - name: "L4GCOUNT"
+            value: "30"
+          - name: "ClusterName"
+            value: "{{ .Values.global.clustername}}"
+          - name: "DataCenterName"
+            value: "{{ .Values.global.datacenter}}"
+          - name: "traceLevel"                                               # TraceLevel supported values- trace, info, warn, error
+            value: "{{ default "error" .Values.config.traceLevel }}"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: "LogStoreHome"
+            value: "/opt/logstore"
+          - name: "PODNAME"
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          volumeMounts:
+          - mountPath: "/opt/logstore"
+            name: logstore-pv-storage
+
+        - name: splunkagent-{{.Values.global.clustername}}                                                      # name of container1 eg: examplecontainer1
+          image: "{{ .Values.global.imageRegistry }}/splunkagent:{{ .Values.image.splunkagentimage.dockerTag }}"                # container image to be filled from values.yaml
+          imagePullPolicy: {{ .Values.image.splunkagentimage.PullPolicy }}                               # can take values always,IfNotPresent
+          ports:
+             - containerPort: 6612                                       # container port to send or accept traffic
+          resources:
+            requests:
+              memory: {{ .Values.splunkagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.splunkagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.splunkagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.splunkagent.resources.limits.cpu | quote }}
+          env:
+          - name: "DestinationConfigPullTimeInterval"
+            value: "60"
+          - name: "DestinationRetryInterval"
+            value: "60"
+          - name: "LogPushTimeInterval"
+            value: "60"
+          - name: "envoyhttpport"
+            value: "{{ .Values.envoyhttpport}}"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "L4GLEVEL"
+            value: "ERROR"
+          - name: "ClusterName"
+            value: "{{ .Values.global.clustername}}"
+          - name: "DataCenterName"
+            value: "{{ .Values.global.datacenter}}"
+          - name: "EPS_ADDR"
+            value: "127.0.0.1"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "LogRetentionPeriod"
+            value: "1440"
+          - name: "MinLogRetentionPeriod"
+            value: "60"
+          - name: "PVUsageCheckPeriod"
+            value: "5"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: "CHANNEL_BUFFER_SIZE"
+            value: "1000"
+          - name: "AgentType"
+            value: "http"
+          {{ if .Values.global.DestinationType.splunk }}
+          - name: "SplunkEnabled"
+            value: "true"
+          {{ end }}
+          {{ if .Values.global.lms_service_enabled }}
+          - name: "ESEnabled"
+            value: "true"
+          {{ end }}
+          volumeMounts:
+          - mountPath: "/opt/streamstore"
+            name: streamstore
+          
+
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoy.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: {{ .Values.envoyports.envoyContainerPort }}
+              protocol: {{ .Values.envoyports.envoyContainerProtocol }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/envoy
+            - name: certs
+              mountPath: /certs
+          env:
+            - name: secretuserzts
+              valueFrom:
+                secretKeyRef:
+                  name: zts1ztssecret
+                  key: username
+            - name: secretpasswordzts
+              valueFrom:
+                secretKeyRef:
+                  name: zts1ztssecret
+                  key: password
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CNNAME
+              value: "logreceiver-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+            - name: CASERVICEFQDN
+              value: "caserverservice.{{.Release.Namespace}}.svc.cluster.local"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+            - name: "CHANNEL_BUFFER_SIZE"
+              value: "{{ .Values.countersenv.channelbuffsize }}"
+            - name: "EPS_ADDR"
+              value: "localhost"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "DATACENTER"
+              value: "{{ .Values.global.datacenter }}"
+            - name: "CLUSTERNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "{{ .Values.global.vnfctype }}"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+        
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           - name: NODE_NAME
+             value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulserver.servicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: "{{ .Release.Namespace }}.svc.cluster.local"
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+          volumeMounts:
+               - name: data
+                 mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+
+        - name: "registerationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulregistration.PullPolicy }}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: {{ .Values.global.clustername }}
+            - name: "SERVICENAME"
+              value: "{{ .Values.consulenv.ztslenvoylbregid }}"
+            - name: MY_NODE_NAME
+              valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+          command: ["sh","consulreg.sh"]
+      volumes:
+          {{ if eq .Values.global.tlsoption "inable" }}
+          - name: certs
+            emptyDir: {}
+          {{ else }}
+          - name: certs
+            secret:
+              secretName: selfsigncert
+          {{ end }}
+          - name: data 
+            emptyDir: {}
+          - name: logstore-pv-storage
+            persistentVolumeClaim:
+              claimName: logstore-pvc-claim
+
+          - name: config
+            configMap:
+              name: configmapenvoylogreceiver
+
+  volumeClaimTemplates:
+   - metadata:
+      name: streamstore
+      labels:
+       release: "{{ .Release.Name }}" 
+     spec:
+       accessModes: ["ReadWriteOnce"]
+       storageClassName: glusterfs-storageclass
+       resources:
+        requests:
+         storage: {{ .Values.pvcStorage.streamstoresize }}

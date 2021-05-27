@@ -1,0 +1,70 @@
+{{- if .Values.curator.enabled }}
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: {{ template "fullname" . }}
+  labels:
+    app: {{ template "name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: {{ .Values.global.seccompAllowedProfileNames }}
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: {{ .Values.global.seccompDefaultProfileName }}
+spec:
+  schedule: "{{ .Values.curator.schedule }}"
+  jobTemplate:
+   metadata:
+     labels:
+       release: {{ .Release.Name }}
+   spec:
+    template:
+     spec:
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: curator
+        image: {{ .Values.global.registry }}/{{ .Values.curator.image.repo }}:{{ .Values.curator.image.tag }}
+        imagePullPolicy: {{ .Values.curator.ImagePullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+             drop:
+               - all
+        args:
+        - --config
+        - /etc/elasticsearch-curator/curator.yml
+        - /etc/elasticsearch-curator/actions.yml
+        resources:
+{{ toYaml .Values.curator.resources | indent 10 }}
+        volumeMounts:
+        - mountPath: /etc/elasticsearch-curator
+          name: curator-configs
+          readOnly: true
+        {{- if .Values.searchguard.enable }}
+        - name: ssl
+          mountPath: "/etc/elasticsearch-curator/certs/"
+          readOnly: true
+        {{- end }}
+      volumes:
+      - name: curator-configs
+        configMap:
+          name: {{ template "fullname" . }}
+          items:
+          - key: curator.yml
+            path: curator.yml
+          - key: actions.yml
+            path: actions.yml
+      {{- if .Values.searchguard.enable }}
+      - name: ssl
+        secret:
+          secretName: {{ template "fullname" . }}
+          items:
+          - key: root-ca.pem
+            path: root-ca.pem
+      {{- end }}
+      restartPolicy: Never
+{{- end }}
+

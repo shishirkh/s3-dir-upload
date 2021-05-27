@@ -1,0 +1,49 @@
+{{ if and (gt (int .Values.maxscale.count) 0) .Values.geo_redundancy.enabled }}
+{{ $remote := .Values.geo_redundancy.remote }}
+{{ $remote_parts := splitList ":" (default ":" $remote.master) }}
+{{ $remote_ip := initial $remote_parts | join ":" | trimAll "[]" }}
+{{ $remote_port := last $remote_parts }}
+{{ if $remote.master }}
+  ## Validate remote host and port and trigger error as needed
+  {{- $ip := (required "A valid geo_redundancy.remote.master must be 'host:port'" $remote_ip) }}
+  {{- $port := (required "A valid geo_redundancy.remote.master must be 'host:port'" $remote_port) }}
+{{ end }}
+---
+kind: Endpoints
+apiVersion: v1
+metadata:
+  name: {{ .Values.name.podname }}-master-{{ $remote.name }}
+  labels:
+    {{- include "cmdb-mariadb.labels" . | indent 4 }}
+subsets:
+  # To be added after install
+{{- if $remote.master }}
+  - addresses:
+      - ip: "{{ $remote_ip }}"
+    ports:
+      - port: {{ $remote_port }}
+        name: "mariadb"
+{{- else }}
+  []
+{{- end }}
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ .Values.name.podname }}-master-{{ $remote.name }}
+  labels:
+    {{- include "cmdb-mariadb.labels" . | indent 4 }}
+spec:
+{{- if $remote.master_remote_service_ip }}
+  clusterIP: {{ $remote.master_remote_service_ip }}
+{{- end }}
+  ports:
+  - name: "mariadb"
+    port: 3306 
+    protocol: TCP
+  # To be modified after install
+{{- if $remote.master }}
+    targetPort: {{ $remote_port }}
+{{- end }}
+
+{{- end }}

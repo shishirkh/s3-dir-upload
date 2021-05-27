@@ -1,0 +1,40 @@
+{{- if .Values.cbur.enabled }}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: {{ template "elasticsearch.data.fullname" . }}
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  brOption: "{{ .Values.cbur.brOption }}"
+  selector:
+    matchLabels:
+      component: elasticsearch
+      role: data
+      release: {{ .Release.Name | quote }}
+  volumes:
+  - elasticsearch-backup
+  {{- if .Values.searchguard.enable }}
+  k8sobjects:
+  - object-type: configmaps
+    match-criteria: name
+    match-string: {{ .Release.Name }}-belk-elasticsearch
+  {{- end }}
+  backend:
+    mode: "{{ .Values.cbur.backendMode }}"
+  cronSpec: "{{ .Values.cbur.cronJob }}"
+  autoEnableCron: {{ .Values.cbur.autoEnableCron }}
+  maxiCopy: {{ .Values.cbur.maxCopy }}
+  k8sType: statefulset
+  ignoreFileChanged: true
+  hooks:
+  - name: es-data
+    commands:
+      preBackupCmd: ["sh", "-c","/etc/elasticsearch/preBackupCommand.sh"]
+      postBackupCmd: []
+      preRestoreCmd: ["sh", "-c","/etc/elasticsearch/removeGlusterFSData.sh"]
+      postRestoreCmd: ["sh", "-c","/etc/elasticsearch/postRestoreCommand.sh"]
+{{- end}}

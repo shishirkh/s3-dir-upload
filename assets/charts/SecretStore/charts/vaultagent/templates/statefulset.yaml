@@ -1,0 +1,361 @@
+apiVersion: apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: vaultagent
+  labels:
+    app.kubernetes.io/name: {{ include "vaultagent.name" . }}
+    helm.sh/chart: {{ include "vaultagent.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    release: {{.Release.Name}}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  serviceName: "vaultagent"
+  selector:
+    matchLabels:
+      app: vaultagent
+      app.kubernetes.io/name: {{ include "vaultagent.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      release: {{.Release.Name}}
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app.kubernetes.io/name: {{ include "vaultagent.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        vnfType: "{{.Values.global.vnftype }}"        
+        vnfName: "{{ .Values.global.vnfname }}"
+        app: vaultagent
+        vnfcType: "{{ .Values.global.vnfctype }}"
+        serviceType: VaultAgent
+        release: {{.Release.Name}}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+    spec:
+      securityContext:
+      affinity:
+        podAntiAffinity:
+        {{- if eq (default "hard" .Values.nodeAntiAffinity) "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - vaultagent
+            topologyKey: "kubernetes.io/hostname"
+          preferredDuringSchedulingIgnoredDuringExecution:
+        {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - vaultagent
+              topologyKey: "kubernetes.io/hostname"
+        {{- end }}
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - vaultagent
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+
+      containers:
+        - name: vaultagent
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.vagent.image }}:{{ .Values.image.vagent.dockerTag }}"
+          imagePullPolicy: {{ .Values.image.vagent.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 7007
+              protocol: TCP
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory | default "512Mi" | quote }}
+              cpu: {{ .Values.resources.requests.cpu | default "250m" | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory | default "512Mi" | quote }}
+              cpu: {{ .Values.resources.limits.cpu | default "250m" | quote }}
+          volumeMounts:
+          - name: vault-pv
+            mountPath: /opt/vault
+          - name: shared-data
+            mountPath: /opt/vaultagent/log
+          - name: rtoken
+            mountPath: /opt/vaultagent/token
+          env:
+          - name: RedisToken
+            valueFrom:
+               secretKeyRef:
+                  name: secretstore-crdb-redis-secrets
+                  key: redis-password 
+          - name: "EPS_ADDR"
+            value: "localhost"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+
+
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command:
+            - "/bin/consul"
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              value: {{ .Values.consulmetadata.name }}
+            - name: NODE_SERVICE_NAME
+              value: {{ .Values.consulserver.servicename }}
+            - name: SERVICE_DOMAIN_NAME
+              value: {{ .Values.consulagentenv.servicedomainName }}
+            - name: DOMAIN_NAME
+              value: {{ .Release.Namespace }}.svc.cluster.local
+            - name: DATACENTER_VALUE
+              value: {{ .Values.global.datacenter }}
+            - name: CLIENT_BIND_IP
+              value: {{ .Values.consulagentenv.agentbindip }}
+          args:
+            - agent
+            - -retry-join=$(NODE_SERVICE_NAME).$(NAMESPACE).$(SERVICE_DOMAIN_NAME)
+            - -retry-join=$(NODE_SERVICE_NAME).$(NAMESPACE).$(SERVICE_DOMAIN_NAME)
+            - -retry-join=$(NODE_SERVICE_NAME).$(NAMESPACE).$(SERVICE_DOMAIN_NAME)
+            - -client=$(CLIENT_BIND_IP)
+            - -data-dir=/tmp/consul
+            - -bind=$(MY_POD_IP)
+            - -enable-script-checks=true
+            - -datacenter=$(DATACENTER_VALUE)
+            - -domain=$(DOMAIN_NAME)
+            - -node=$(PODNAME)
+          volumeMounts:
+          - name: data
+            mountPath: /tmp/consul
+          ports:
+           - containerPort: 8500
+             name: ui-port
+           - containerPort: 8400
+             name: alt-port
+           - containerPort: 53
+             name: udp-port
+           - containerPort: 8600
+             name: udp-port-dns
+           - containerPort: 8443
+             name: https-port
+           - containerPort: 8080
+             name: http-port
+           - containerPort: 8301
+             name: serflan
+           - containerPort: 8302
+             name: serfwan
+           - containerPort: 8600
+             name: consuldns
+           - containerPort: 8300
+             name: agent 
+
+        - name: envoy-container
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoy.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+           - containerPort: {{ .Values.envoyports.envoyContainerPort }}
+             protocol: {{ .Values.envoyports.envoyContainerProtocol }}
+          volumeMounts:
+          - name: envoyconfig
+            mountPath: /etc/envoy
+          - name: certs
+            mountPath: /certs
+          - name: shared-data-envoy
+            mountPath: /var/DebugTrace/EnvoySideCar
+          env:
+          - name: secretuserzts
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: username
+          - name: secretpasswordzts
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: password
+          - name: CNNAME
+            value: "vault-service-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{ .Release.Namespace }}.svc.cluster.local"
+          - name: CASERVICEFQDN
+            value: caserverservice.{{ .Release.Namespace}}.svc.cluster.local
+          - name: "EPS_ADDR"
+            value: "localhost"  
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: "traceLevel"
+            value: "{{ .Values.global.counteralarmtracelevel }}"
+          - name: "CHANNEL_BUFFER_SIZE"
+            value: "{{ .Values.countersenv.channelbuffsize }}"
+            
+            
+        - name: registerationcontainer
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: "{{.Values.image.consulregistration.pullPolicy}}"
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SERVICENAME"
+              value: "vault-service"
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: {{ .Values.global.clustername }}
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+          command: ["sh","consulreg.sh"]
+
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.fluentbitimage.pullPolicy}}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          env:
+              - name: TARGET_IP
+                value: "127.0.0.1"
+              - name: TARGET_PORT
+                value: "8888"
+              - name: "traceLevel"
+                value: "error"
+              - name: "logRetention"
+                value: "2"
+              - name: "logPath"
+                value: "/opt/log"
+              - name: VNFNAME
+                value: {{ .Values.global.vnfname }}
+              - name: VNFCTYPE
+                value: "{{ .Values.global.vnfctype }}"
+              - name: VNFTYPE
+                value: "{{ .Values.global.vnftype }}"
+              - name: "VNFCNAME"
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+          volumeMounts:
+          - name: shared-data
+            mountPath: /var/log
+          - name: shared-data-envoy
+            mountPath: /var/DebugTrace/EnvoySideCar 
+          - name: config-volume 
+            mountPath: /fluent-bit/etc                  
+      volumes:
+        - name: vault-pv
+          configMap:
+            name: test-vault-config
+        - name: envoyconfig
+          configMap:
+            name: vagentenvoyconfigmap
+        - name: shared-data
+          emptyDir: {}
+        - name: config-volume
+          configMap:
+            name: fluent-bit-config-ss-vagent
+        - name: data 
+          emptyDir: {}
+        - name : shared-data-envoy
+          emptyDir: {}
+        - name: certs
+          emptyDir: {}
+        - name: config 
+          emptyDir: {}
+        - name: rtoken
+          secret:
+            secretName: secretstore-cskm-secret
+            items:
+            - key: token
+              path: cskm
+              mode: 0777
+
+  volumeClaimTemplates:
+  - metadata:
+      name: vault-pv
+      labels:
+        release: {{.Release.Name}}
+    spec:
+      accessModes:
+        - "ReadWriteOnce"
+      resources:
+        requests:
+          storage: 1000Mi
+      storageClassName: glusterfs-storageclass
+      nodeSelector:
+
+

@@ -1,0 +1,51 @@
+{{- if gt (int .Values.global.postrestore) 0 }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Release.Name }}-post-restore"
+  labels:
+    {{- include "crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "crdb-redisio.common_labels" . | indent 8 }}
+        type: admin-ncms-hook
+        ncms-hook: postrestore
+    spec:
+      securityContext:
+        runAsUser: 6379
+        runAsGroup: 6379
+        fsGroup: 6379
+      {{- if .Values.rbacEnabled }}
+      serviceAccountName: {{ .Values.name.podname }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+      - name: post-restore-admin
+        {{- include "crdb-redisio.admin.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.admin.resources | indent 10 }}
+        args: [ "restore" ]
+        env:
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: K8S_LABELS
+          value: app={{ .Values.name.podname }}
+        - name: K8S_PREFIX
+          value: {{ .Values.name.podname }}
+        - name: HOOK_TYPE
+          value: "post"
+        - name: RBAC_ENABLED
+          value: {{ .Values.rbacEnabled | quote }}
+        - name: DEBUG
+          value: {{ quote ( .Values.admin.debug | default "" ) }}
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /cluster
+      volumes:
+      - name: cluster-cm
+        configMap:
+          name: {{ .Values.name.podname }}-cluster-config
+{{- end }}

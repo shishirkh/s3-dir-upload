@@ -1,0 +1,14 @@
+apiVersion: v1
+appVersion: 0.0.1
+description: This chart is to deploy MetadataStoreService in kubernets cluster
+engine: gotpl
+keywords:
+- MetadataStoreService
+- "20.0"
+- MetadataStoreService
+- 'X-COMPAAS: { "CATEGORY": "ZTS - Main O&M Services", "SVC_NAME": "MetaData Store
+  Service", "SVC_TYPE": "ZTS",  "SVC_SCOPE": [ "SHARED" ] }'
+maintainers:
+- name: Nokia
+name: MetadataStoreService
+version: 1.5.37

@@ -1,0 +1,8 @@
+apiVersion: v1
+appVersion: 1.0.100
+description: This chart is to deploy ZT REDIS DB & DB Handler
+engine: gotpl
+maintainers:
+- name: Nokia
+name: trackerdb
+version: 1.0.100

@@ -1,0 +1,494 @@
+# Author: Venkat Masuldari
+# This is a YAML-formatted file.
+# POD Deployment file to deploy ZT-VNF Extension integration 
+# The below is integration-deployment.yamlfor deployment of the integration
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: integration-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: {{.Release.Name}}
+---
+{{- if not .Values.global.daadminUser.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-integration-rolebinding-{{.Release.Namespace}}
+  labels:
+    release: {{.Release.Name}}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: psp:privileged
+subjects:
+  - kind: ServiceAccount
+    name: integration-sa
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: integration-internal-zts1
+  labels:
+    app: integration-internal-zts1
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"                                     # will be filled by chart name-chartversion from chart.yaml eg: exampleservice.0.1.0
+    release: "{{ .Release.Name }}"                                                      # Will get filled by kubernetes
+    heritage: "{{ .Release.Service }}"
+spec:
+  replicas: {{default 1 .Values.Replicas}}                                              # number of replicated pods to be created 
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: integration-internal-zts1
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+        serviceType: INTEGRATIONSERVICE
+    spec:
+      hostname: integration-pod                                      # Optional, hostname of the exampleservice , fill in values.yaml
+      serviceAccountName: integration-sa      
+      containers:
+        - name: ztssettings-internal-zts1   ####################### ztssettings ################### 
+          image: "{{ .Values.global.imageRegistry }}/ztssettings:{{ .Values.image.ztssettingsserviceimage.dockerTag }}" # container image to be filled from values.yaml
+          imagePullPolicy: "{{ .Values.image.ztssettingsserviceimage.PullPolicy }}"                               # can take values always,IfNotPresent
+          ports:
+            - containerPort: 9090 # container port to send or accept traffic
+          resources:
+            requests:
+              memory: {{ .Values.ztssettings.resources.requests.memory | quote }}
+              cpu: {{ .Values.ztssettings.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.ztssettings.resources.limits.memory | quote }}
+              cpu: {{ .Values.ztssettings.resources.limits.cpu | quote }}
+          env:
+          - name: "ZTSConfigIP"
+            value: "127.0.0.1"
+          - name: "ZTSConfigAccessPort"
+            value: "9090"
+          - name: "configIP"
+            value: "127.0.0.1"
+          - name: "configAccessPort"
+            value: "8888"
+          - name: "L4GPORT"
+            value: "1234"
+          - name: "DAConfigIP"
+            value: "10.96.180.99"
+          - name: "logRetention"
+            value: "2"
+          - name: "traceLevel"          # TraceLevel supported values- trace, info, warn, error
+            value: "error"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "EPS_ADDR"
+            value: "localhost"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          volumeMounts:
+          - name: shared-data-settings
+            mountPath: "/opt/log"
+###################################### DAservice ############################################
+        - name: dynamicadaptation-internal-zts1   
+          image: "{{ .Values.global.imageRegistry }}/daservice:{{ .Values.image.dynamicadaptationimage.dockerTag }}" # container image to be filled from values.yaml
+          imagePullPolicy: "{{ .Values.image.dynamicadaptationimage.PullPolicy }}"
+{{- if .Values.global.daadminUser.enabled }}
+          securityContext:
+            runAsUser: 2005
+{{- end }}
+          # can take values always,IfNotPresent
+          resources:
+            requests:
+              memory: {{ .Values.dynamicadaptation.resources.requests.memory | quote }}
+              cpu: {{ .Values.dynamicadaptation.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.dynamicadaptation.resources.limits.memory | quote }}
+              cpu: {{ .Values.dynamicadaptation.resources.limits.cpu | quote }}
+          env:
+          - name: "dynamicadaptationListeningIP"
+            value: "127.0.0.1"
+          - name: "dynamicadaptationPort"
+            value: "127.0.0.1:9070"
+          - name: "logRetention"
+            value: "2"
+          - name: "traceLevel"          # TraceLevel supported values- trace, info, warn, error
+            value: "error"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "metaDataFilesPath"
+            value: "/opt/DynamicAdaptation"
+          - name: "EPS_ADDR"
+            value: "localhost"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "L4GPORT"
+            value: "1235"
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: "ENABLE_DAADMIN"
+            value: "{{ .Values.global.daadminUser.enabled }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name          
+          volumeMounts:
+          - mountPath: "/opt/DynamicAdaptation"
+            name: multi-pv-storage
+          - name: shared-data-da
+            mountPath: "/opt/log"
+
+####################################### integration ################################################## 
+        - name: integration-internal-zts1   
+          image: "{{ .Values.global.imageRegistry }}/integrationservice:{{ .Values.image.integrationserviceimage.dockerTag }}"                # container image to be filled from values.yaml
+          imagePullPolicy: "{{ .Values.image.integrationserviceimage.PullPolicy }}"                               # can take values always,IfNotPresent
+          resources:
+            requests:
+              memory: {{ .Values.integration.resources.requests.memory | quote }}
+              cpu: {{ .Values.integration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.integration.resources.limits.memory | quote }}
+              cpu: {{ .Values.integration.resources.limits.cpu | quote }}
+          env:
+          - name: "integrationListeningIP"
+            value: "127.0.0.1"
+          - name: "integrationIPPort"
+            value: "127.0.0.1:9999"
+          - name: "keyCloakIPPort"
+            value: "127.0.0.1:9191"
+          - name: "grpcListenIPPort"
+            value: "127.0.0.1:7080"
+          - name: "netactIPPort"
+            value: "127.0.0.1:8888"
+          - name: "DATACENTER"
+            value: "{{ .Values.consulagentenv.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername}}"
+          - name: "configIP"
+            value: "127.0.0.1"
+          - name: "configAccessPort"
+            value: "8888"
+          - name: "L4GPORT"
+            value: "1236"
+          - name: "DAIPPort"
+            value: "127.0.0.1:9070"
+          - name: "logRetention"
+            value: "2"
+          - name: "traceLevel"          # TraceLevel supported values- trace, info, warn, error
+            value: "error"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "integrationFilesPath"
+            value: "/opt/integrationDB"
+          - name: "EPS_ADDR"
+            value: "localhost"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: PODNAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          volumeMounts:
+          - name: shared-data-integ
+            mountPath: "/opt/log"
+
+############################################## envoy-container ####################################################
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoy.PullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+          - containerPort: {{ .Values.envoyports.envoyContainerPort }}
+          protocol: {{ .Values.envoyports.envoyContainerProtocol }}
+          volumeMounts:
+          - name: config
+            mountPath: /etc/envoy
+          - name: certs
+            mountPath: /certs
+          - name: shared-data-envoy
+            mountPath: "/var/DebugTrace/EnvoySideCar"
+          env:
+            - name: secretuserzts
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.casecret }}
+                  key: username
+            - name: secretpasswordzts
+              valueFrom:
+                 secretKeyRef:
+                    name: {{ .Values.global.casecret }}
+                    key: password
+            - name: CNNAME
+              value: "{{ .Values.consulenv.ztslenvoylbregid }}-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+            - name: CASERVICEFQDN
+              value: "caserverservice.{{.Release.Namespace}}.svc.cluster.local"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: "EPS_ADDR"
+              value: "localhost"
+            - name: "EPS_PORT"
+              value: "6061"
+            - name: "DATACENTER"
+              value: "{{ .Values.global.datacenter }}"
+            - name: "CLUSTERNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: "METADATA_MAX_RELEASE"
+              value: "{{ .Values.global.metadata_max_release }}"
+            - name: "METADATA_MIN_RELEASE"
+              value: "{{ .Values.global.metadata_min_release }}"
+            - name: "VNFTYPE"
+              value: "{{ .Values.global.vnftype }}"
+            - name: "VNFNAME"
+              value: "{{ .Values.global.vnfname }}"
+            - name: "VNFCTYPE"
+              value: "{{ .Values.global.vnfctype }}"
+            - name: "traceLevel"
+              value: "{{ .Values.global.counteralarmtracelevel }}"
+            - name: "CHANNEL_BUFFER_SIZE"
+              value: "{{ .Values.countersenv.channelbuffsize }}"
+
+############################################## fluent-bit ####################################################
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.fluentbit.pullPolicy}}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          env:
+            - name: TARGET_IP
+              value: "127.0.0.1"
+            - name: TARGET_PORT
+              value: "8888"
+            - name: "traceLevel"
+              value: "trace"
+            - name: "logRetention"
+              value: "2"
+            - name: "logPath"
+              value: "/opt/log"
+            - name: VNFNAME
+              value: {{ .Values.global.vnfname }}
+            - name: VNFCTYPE
+              value: "{{ .Values.global.vnfctype }}"
+            - name: VNFTYPE
+              value: "zts"
+            - name: "VNFCNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+              - name: shared-data
+                mountPath: /var/log
+              - name: shared-data-envoy
+                mountPath: /var/DebugTrace/EnvoySideCar
+              - name: shared-data-da
+                mountPath: /var/log/da
+              - name: shared-data-integ
+                mountPath: /var/log/integ
+              - name: shared-data-settings
+                mountPath: /var/log/settings
+              - name: config-volume
+                mountPath: /fluent-bit/etc
+        
+############################################## consul ####################################################
+
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consulimage.PullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_SERVICE_NAME
+              value: {{ .Values.consulagent.service.serverservicename }}
+            - name: SERVICE_DOMAIN_NAME
+              value: {{ .Values.consulagentenv.servicedomainName }}
+            - name: DOMAIN_NAME
+              value: "{{ .Release.Namespace }}.svc.cluster.local"
+            - name: DATACENTER_VALUE
+              value: {{ .Values.global.datacenter }}
+            - name: CLIENT_BIND_IP
+              value: {{ .Values.consulagentenv.agentbindip }}
+            - name: SERVER_NUM
+              value: "3"
+          volumeMounts:
+            - name: data
+              mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+
+
+        - name: cbura-sidecar
+          {{- include "cburasidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.cbura.PullPolicy }}
+{{- if .Values.global.daadminUser.enabled }}
+          securityContext:
+            runAsUser: 1000
+{{- else }}
+          securityContext:
+            runAsUser: 0
+{{- end }}
+          resources:
+            requests:
+              memory: {{ .Values.cbursidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.cbursidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.cbursidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.cbursidecar.resources.limits.cpu | quote }}
+          volumeMounts:
+          - name: multi-pv-storage
+            mountPath: "/multi-pv-storage"
+
+        - name: "registerationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.consulregistration.PullPolicy}}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SERVICENAME"
+              value: "{{ .Values.consulenv.ztslenvoylbregid }}"
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: "{{ .Values.global.clustername}}"
+          command: ["sh","consulreg.sh"]
+      volumes:
+          - name: multi-pv-storage
+            persistentVolumeClaim:
+              claimName: integrationpersistance-pvc-claim
+          - name: config
+            configMap:
+              name: configmapenvoyintegration
+          - name: shared-data-envoy
+            emptyDir: {}
+          - name: certs
+            emptyDir: {}
+          - name: data
+            emptyDir: {}
+          - name: shared-data
+            emptyDir: {}
+          - name: shared-data-da
+            emptyDir: {}
+          - name: shared-data-integ
+            emptyDir: {}
+          - name: shared-data-settings
+            emptyDir: {}
+          - name: config-volume
+            configMap:
+              name: fluent-bit-config-integration
+      
+

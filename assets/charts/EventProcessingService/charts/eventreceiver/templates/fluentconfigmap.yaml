@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config-eps-eventreceiver
+  labels:
+    k8s-app: fluent-bit
+data:
+  # Configuration files: server, input, filters and output
+  # ======================================================
+   fluent-bit.conf: |
+    [SERVICE]
+        Flush        1
+        Log_Level    info
+        Plugins_File /fluent-bit/etc/plugins.conf
+        Parsers_File /fluent-bit/etc/parser.conf
+
+    [INPUT]
+        Name        tail
+        Tag         eventreceiver.*
+        Path        /var/log/**/*
+        Path_Key    class
+        DB          /var/log/{{ .Chart.Name }}_{{ randAlphaNum 5 | lower }}_DbFile.db
+        Exclude_Path /var/log/*.db,*.gz,*.tar,*.zip,*.bz2,*.xz,*.7z
+
+    [INPUT]
+        Name        tail 
+        Tag         conf.* 
+        Path        /var/DebugTrace/EnvoySideCar/*
+        Path_Key    class
+        DB          /var/log/{{ .Chart.Name }}_{{ randAlphaNum 5 | lower }}_DbFile.db
+        Exclude_Path /var/log/*.db,*.gz,*.tar,*.zip,*.bz2,*.xz,*.7z
+    [INPUT]
+        Name        tail 
+        Tag         conf.* 
+        Path        /var/log/startup-stderr*.* 
+        Path_Key    class
+        DB          /var/log/{{ .Chart.Name }}_{{ randAlphaNum 5 | lower }}_DbFile.db
+        Exclude_Path /var/log/*.db,*.gz,*.tar,*.zip,*.bz2,*.xz,*.7z
+    [INPUT] 
+        Name        tail 
+        Tag         conf.* 
+        Path        /var/log/envoy.*
+        Path_Key    class
+        DB          /var/log/{{ .Chart.Name }}_{{ randAlphaNum 5 | lower }}_DbFile.db
+        Exclude_Path /var/log/*.db,*.gz,*.tar,*.zip,*.bz2,*.xz,*.7z
+
+
+    [OUTPUT]
+        Name     gstdout
+        Match    *
+
+
+    [FILTER]
+        Name     parser
+        Match    *
+        Parser   epsparser
+
+    [FILTER]
+        Name     parser
+        Match    system.log
+        Parser   cassadraepsparser
+
+
+   plugins.conf: |
+    [PLUGINS]
+        Path   /fluent-bit/lib/out_gstdout.so
+
+   parser.conf: |
+    [PARSER]
+        Name        epsparser
+        Format      regex
+        Regex       (?<log_level>[^:]*): (?<event_time_stamp>.{19}) (?<process_name>([^ ])+):(?<action>[^:]*):(?<log_message>.*) 
+
+    [PARSER]
+        Name        cassadraepsparser
+        Format      regex
+        Regex       (?<log_level>[^ ]*) \[(?<action>[^ ]*)\] (?<event_time_stamp>.{23}) (?<process_name>[^ ]*) (?<log_message>.*)        

@@ -1,0 +1,5 @@
+dependencies:
+- name: clustermonitoragent
+  version: 1.2.55
+- name: clustermonitorserver
+  version: 1.2.55

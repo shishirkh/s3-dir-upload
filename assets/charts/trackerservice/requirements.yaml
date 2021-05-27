@@ -1,0 +1,5 @@
+dependencies:
+- name: trackerdb 
+  version: 1.2.55
+- name: trackerserver
+  version: 1.2.55

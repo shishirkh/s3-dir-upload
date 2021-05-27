@@ -1,0 +1,19 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-cluster-config
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+data:
+  cluster.env: |-
+    # Environment variables for cluster configuration
+    SERVER_COUNT={{ .Values.server.count }}
+    SERVER_NODE_SERVICE={{ template "cm-crdb-redisio.fullname" . }}-server-nodes
+    SERVER_NODE_PREFIX={{ template "cm-crdb-redisio.fullname" . }}-server
+  {{- if and .Values.sentinel .Values.sentinel.enabled }}
+    SENTINEL_COUNT={{ .Values.sentinel.count }}
+    SENTINEL_NODE_SERVICE={{ template "cm-crdb-redisio.fullname" . }}-sentinel-nodes
+    SENTINEL_NODE_PREFIX={{ template "cm-crdb-redisio.fullname" . }}-sentinel
+    SENTINEL_QUORUM={{ .Values.sentinel.quorum }}
+  {{- end }}

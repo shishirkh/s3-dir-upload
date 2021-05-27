@@ -1,0 +1,272 @@
+---
+global:
+  ## Registry for skm image
+  imageRegistry: "bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net"
+
+  metadata_max_release: "19.0"
+  metadata_min_release: "0.5SP1"
+  vnftype: "ZTS"
+  clustername: "zts1"
+
+name:
+ podname: secretstore-cskm
+
+image: 
+  skm: 
+    dockerTag: 2.9.5-4
+    pullPolicy: IfNotPresent
+  cbura:
+    dockerTag: 1.0.3-983
+    pullPolicy: IfNotPresent
+  kubectl: 
+    dockerTag: v1.10.3 
+    imageRepo: "um/kubectl"
+    pullPolicy: IfNotPresent
+  busybox:
+    dockerTag: latest
+    pullPloicy: IfnNotPresent
+
+imageRepo: "skm/skm"
+busyboximageRepo: busybox
+
+initBusyBoxContainer:
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+
+## CSKM Parameters
+CLUSTER_NAME: "cskm"
+
+# If backens is file, only 1 pod is allowed. File doesn't support HA mode.
+CLUSTER_SIZE: 1
+
+## BACKEND_CONFIG - hcl config file for Vault. Will be used on Vault startup.  
+## By default configuration with file backend is enabled. 
+## Example configurations for CSDC and CMDB is also provided.  
+
+
+# - type: backend type could be "file", "csdc", "cmdb", "other"
+# - initContainerEnabled: Init container waits till backend service will be
+#   available. Now supported only for csdc and cmdb backend. Set to True if
+#   you want to enable this functionality.
+# - serviceName: address or name of backend service
+# - servicePort: port of backend service
+backend:
+  type: "cmdb"
+  initContainerEnabled: True
+  serviceName: "secretstore-mariadb.default.svc.cluster.local"
+  servicePort: 3306
+  
+
+
+# Change backendCSDC to True when using CSDC backend
+backendCSDC: False
+
+## CMDB backend (MariaDb)
+
+BACKEND_CONFIG: "storage \"mysql\" { address = \"secretstore-mariadb.default.svc.cluster.local:3306\" ha_enabled = \"true\" username = \"vault\" password = \"vault\" database = \"vault\" } listener \"tcp\" { address = \"0.0.0.0:8200\" tls_key_file = \"/opt/vault/tls/tls.key\" tls_cert_file=\"/opt/vault/tls/tls.crt\" } disable_mlock = true"
+
+
+
+# Persistent storage for file backend. Change doPvClaim to False if you are not using file backend
+backendFileStorage:
+  doPvClaim: False
+  class: "glusterfs-storageclass"
+  size: "100Mi"
+
+
+service:
+  type: "ClusterIP"
+  port: 8200
+
+rbac:
+  create: false
+
+# Preserve backup PVC on delete?
+preserve_cskm_pvc: False
+
+## Deprecated. Audit log is enabling if logging.auditToStdoutEnabled or logging.auditToStdoutEnabled 
+# set to True
+#enableAuditLog: "disable"
+
+
+## Deprecated. use logging.systemLogLevel
+#vaultLogLevel: "info"
+
+
+## Logging in unified format
+#
+# What is logging
+# - Vault audit
+# - system: vault stdout and stderr, output cskm scripts like from unseal 
+# - alarms: if vault unhealthy 
+# - metrics: number of request to vault per minute
+#
+# Where it is logging:
+# - container stdout 
+# - local file
+logging:
+  # Send vault audit log to stdout
+  auditToStdoutEnabled: False
+  # Send vault audit log to file
+  auditToFileEnabled: False
+  # Send vault and cskm scripts output to stdout
+  systemToStdoutEnabled: True
+  # Send vault and cskm scripts output to file
+  systemToFileEnabled: False
+  # Log level of system (vault) logs. Allowed values: trace, debug, info, warn, err
+  systemLogLevel: "info"
+  # Send Alarms to stdout
+  alarmsToStdotEnabled: True
+  # Send Alarms to file
+  alarmsToFileEnabled: False
+  # Send Metrics to stdout
+  metricsToStdotEnabled: True
+  # Send Metrics to file
+  metricsToFileEnabled: False
+  # Local log file parameters (default location /opt/vault/logs/unified_log.log)
+  filePath: "default"
+  numOfFiles: "3"
+  fileSizeBytes: "20000000"
+
+
+## File storage for logs
+logStorage:
+  doPvClaim: True
+  class: "glusterfs-storageclass"
+  size: "100Mi"
+
+
+livenessProbe:
+  enabled: True
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  failureThreshold: 3
+  standbyok: True
+  uninitok: False
+  sealedok: False
+
+readinessProbe:
+  enabled: True
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  failureThreshold: 3
+  standbyok: True
+  uninitok: False
+  sealedok: False
+
+
+## You and add there any environment variable supported by Vault 
+# Use $(POD_IP) variable for pod ip address
+envVariables:
+  - name:  VAULT_CLUSTER_ADDR
+    value: "https://$(POD_IP):8201"
+  - name: VAULT_API_ADDR
+    value: "https://$(POD_IP):8200"
+
+
+# To disable TLS for Vault REST API set this variable to True.
+# IMPORTANT: You also need to add tls_disable = 1 in Vault configuration 
+# defined in BACKEND_CONFIG variable inside listener {} section. 
+# See HashCorp Vault documentation for format of server configuration file
+tlsDisabled: False
+
+
+# Placeholders for secrets
+secrets:
+  unslkey_base64: bm8tc2VjcmV0Cg==  
+  token_base64: bm8tdG9rZW4=
+
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 4096Mi
+    cpu: 2000m
+
+
+## Post-install job debugging options
+
+# Delay in the end of post-install job in sec. Will help to post-install job exist longer. 
+# You will have more time to examinate the job logs
+secondsAfterPostInstall: 0
+# Set to True to see trace output from post-install job log.
+# WARNING: When True it will expose Vault secrets - root token and unseal key to log.
+# Use this option only when troubleshooting.
+postInstallTraceEnabled: False
+
+
+## CBUR backup settings 
+
+cbur:
+  enabled: true
+  backendMode: "AVAMAR"
+  cronSpec : "0 0 * * *"
+  brOption: "2"
+  maxCopy: "5"
+  
+  image:
+    repository: "cbur/cbura"
+
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+    runAsGroup: 1000
+  
+  backupStorage:
+    size: "400Mi"
+    class: "glusterfs-storageclass"
+
+  resources:
+    requests:
+      memory: 16Mi
+      cpu: 10m
+    limits:
+      memory: 4096Mi
+      cpu: 1000m
+
+
+kubectl:
+  image:
+    repo: um/kubectl
+
+
+# Flag for CSKM startup mode. Available values:
+# 1 - Vault starts automatically and initialize and unseal itself. (default)
+# 0 - Vault starts but stays not initialized and sealed. Admin should to initialization and unsealing from outside of pod.
+# -1 - Vault is not started. This mode is intended for troubleshooting if pod is crushing on startup. In this
+#      mode pod started and mount persistent volumes. You can join the CSKM container and check logs from previous runs
+#      on the persistent volume.
+autoInitUnseal: "1"
+
+
+# user defined script to configure vault. The post-install job will pass as env variables:
+# 1 - cskm service name 
+# 2 - root token 
+# 3 - vault rest api protocol: https or http
+userScript: |
+  set -x
+  echo "values from post install job:" ${1} ${2}
+
+  # Uncomment this code if you need to debug user script
+  # WARNING: Use debug ouput only for solving the problem and coment it out after. Debug output 
+  # will expose vault root token to stdout.  
+  
+
+  # The following curl commands are samples for the admin to enable and configure K8S auth method
+  # Please customize them when you want to use K8S auth method. 
+ 
+  # curl -v --insecure -X POST --header "X-Vault-Token:${2}" --data '{"type" :"kubernetes","description": "Login with K8S RBAC"}' ${3}://${1}:8200/v1/sys/auth/kubernetes
+
+  # curl -v --insecure -X POST --header "X-Vault-Token:${2}" --data '{"kubernetes_host":"172.16.1.9:8443","kubernetes_ca_cert": "-----BEGINCERTIFICATE-----\n.....\n-----ENDCERTIFICATE-----"}' https://${1}:8200/v1/auth/kubernetes/config
+
+  # curl -v --insecure -X POST --header "X-Vault-Token:${2}" --data '{"bound_service_account_names": "*", "bound_service_account_namespaces": "default", "policies": ["dev", "prod"], "max_ttl": 1800000}' https://${1}:8200/v1/auth/kubernetes/role/your_role_name
+
+  # curl --insecure -X LIST --header "X-Vault-Token:${2}" ${3}://${1}:8200/v1/auth/kubernetes/role

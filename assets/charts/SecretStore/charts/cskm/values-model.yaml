@@ -1,0 +1,320 @@
+---
+# Model of configuration. 
+type: object
+properties:
+    imageInfo:
+        description: |
+            Provides information about basic parameters. 
+        type: object
+        properties:
+            replicaCount:
+                description: |
+                    The number of Kubernetes pods.
+                type: integer
+                default: 1
+                minimum: 1
+                title: Replica Count
+
+    registryInfo:
+        description: |
+            Compaas specific configuration
+        type: object
+        properties:
+            artifactoryUrl:
+                description: |
+                     Docker registry URL
+                type: string
+                default: bcmt-registry:5000/corepaas-docker-local.bhisoj70.apac.nsn-net.net/um/cmdb/mariadb
+                title: Docker registry URL
+                
+
+    secondsAfterPostInstall:
+        description: "Seconds of delay after post installation job - useful for debugging"
+        type: object
+        properties:
+            secondsAfterPostInstall:
+                description: "Integer (>=0)"
+                type: integer
+                default: 0
+                title: Seconds of delay after post installation job
+
+
+    postInstallTraceEnabled:
+        description: "Set to True to see trace output from post-install job log"
+        type: object
+        properties:
+            postInstallTraceEnabled:
+                description: "True or False"
+                type: boolean
+                default: False
+                title: Trace output from post-install
+
+
+    backendInfo:
+        description: |
+            Provides information about storage backend.
+        type: object
+        properties:
+            vaultConfig:
+                description: |
+                    Vault config for storage backend. By default, it is file backend. A sample CSDC backend is "storage \"etcd\" { address  = \"https://my-csdc-csdc.default.svc:2379\" tls_ca_file = \"/etc/tls/ca-cert/ca.pem\" tls_cert_file = \"/etc/tls/client-cert/client.pem\" tls_key_file = \"/etc/tls/client-cert/client-key.pem\" etcd_api = \"v3\" } listener \"tcp\" { address = \"0.0.0.0:8200\" tls_key_file = \"/opt/vault/tls/tls.key\" tls_cert_file=\"/opt/vault/tls/tls.crt\"} disable_mlock = true"
+                type: string
+                default: storage \"file\" { path = \"/opt/vault/file\" }  listener \"tcp\" { address = \"0.0.0.0:8200\" tls_key_file = \"/opt/vault/tls/tls.key\" tls_cert_file=\"/opt/vault/tls/tls.crt\"} disable_mlock = true
+                title: Storage backend configuration
+            backendType:
+                description: |
+                    Backend Type. E.g. file, csdc, cmdb
+                type: string
+                default: "file"
+            initContainerEnabled:
+                description: |
+                    Init container waits till backend service will be available. Now supported only for csdc and cmdb backend. Set to True if you want to enable this functionality.
+                type: boolean
+                default: False
+            serviceName:
+                description: |
+                    Service name to access the backend service
+                type: string
+                default: ""
+            servicePort:
+                description: |
+                    Backend service port
+                type: integer
+                default: 0
+                
+    apiInfo:
+        description: |
+            Provides configuration for REST API
+        type: object
+        properties:
+            tlsDisabled:
+                description: |
+                    To disable TLS for Vault REST API set this variable to True. IMPORTANT: You also need to add tls_disable = 1 in Vault configuration defined in BACKEND_CONFIG variable inside listener {} section. See HashCorp Vault documentation for format of server configuration file
+                type: boolean
+                default: False
+                title: REST API TLS disabled
+                
+    resourcesInfo:
+        description: |
+            Model of configuration required to request new instance.
+        type: object
+        properties:
+            memory:
+                description: |
+                     Memory size reserved for a service.
+                type: string
+                default: 256Mi
+                max: 2048Mi
+                title: Memory
+            cpu:
+                description: |
+                    CPU resources reserved for a service.
+                type: string
+                default: 250m
+                max: 500m
+                title: CPU
+            backendFileSize:
+                description: |
+                     Disk size reserved for the file backend.
+                type: string
+                default: 100Mi
+                title: Size of the storage backend file if the storage backend is file
+            backendStorageClass:
+                description: |
+                     Storage Class Name for file backend
+                type: string
+                default: ""
+                title: Storage Class Name for file backend
+            logFileSize:
+                description: |
+                     Disk size reserved for the logfile.
+                type: string
+                default: 100Mi
+                title: Size of the log file per pod
+            logStorageClass:
+                description: |
+                     Storage Class Name for logs
+                type: string
+                default: ""
+                title: Storage Class Name for logs
+            backupVolumeSize:
+                description: |
+                     Disk size reserved for backup and restore.
+                type: string
+                default: 400Mi
+                title: Size of the volume used for backup and restore. The safe size is twice of the sum of size of logfile and file backend (if you have filebackend enabled).
+            backupStorageClass:
+                description: |
+                     Storage Class Name for backups
+                type: string
+                default: ""
+                title: Storage Class Name for backups
+            backendMode:
+                description: |
+                     Backend mode for cbur
+                type: string
+                default: "local"
+                title: Backend mode for cbur
+            cronSpec:
+                description: |
+                     cronSpec for cbur
+                type: string
+                default: "0 0 * * *"
+                title: cronSpec for cbur
+            brOption:
+                description: |
+                     brOption for cbur
+                type: integer
+                default: 2
+                title: brOption for cbur
+            maxCopy:
+                description: |
+                     maxCopy for cbur
+                type: integer
+                default: 5
+                title: maxCopy for cbur
+
+    cskmPersistenceInfo:
+        description: |
+            CSKM persistence info.
+        type: object
+        properties:
+            preserveCskmPVC:
+                description: |
+                    Flag for whether to keep persistent volume claims (e.g. for backup) after CSKM is deleted.
+                type: boolean
+                default: False
+                title: Preserve CSKM Persistent Volume Claims on delete
+
+    service:
+        description: "Service parameters"
+        type: object
+        properties:
+            type:
+                description: "Kubernetes ServiceType. E.g. ClusterIP, NodePort"
+                type: string
+                default: "ClusterIP"
+            port:
+                description: "Service port"
+                type: integer
+                default: 8200
+
+    logging:
+        description: "Logging parameters"
+        type: object
+        properties:
+            auditToStdoutEnabled:
+                description: "Send vault audit log to stdout"
+                type: boolean
+                default: false
+            auditToFileEnabled:
+                description: "Send vault audit log to file"
+                type: boolean
+                default: false
+            systemToStdoutEnabled:
+                description: "Send vault and cskm scripts output to stdout"
+                type: boolean
+                default: true
+            systemToFileEnabled:
+                description: "Send vault and cskm scripts output to file"
+                type: boolean
+                default: false
+            systemLogLevel:
+                description: "Log level of system (vault) logs. Allowed values: trace, debug, info, warn, err"
+                type: string
+                default: info
+            alarmsToStdotEnabled:
+                description: "Send Alarms to stdout"
+                type: boolean
+                default: true
+            alarmsToFileEnabled:
+                description: "Send Alarms to file"
+                type: boolean
+                default: false
+            metricsToStdotEnabled:
+                description: "Send Metrics to stdout"
+                type: boolean
+                default: true
+            metricsToFileEnabled:
+                description: "Send Metrics to file"
+                type: boolean
+                default: false
+            filePath:
+                description: "Local log file (default location /opt/vault/logs/unified_log.log)"
+                type: string
+                default: default
+            numOfFiles:
+                description: "Number of rotated log files"
+                type: integer
+                default: 3
+            fileSizeBytes:
+                description: "Size of each rotated log file in bytes"
+                type: integer
+                default: 20000000
+
+    livenessProbe:
+        description: "Pod LivenessProbe parameters"
+        type: object
+        properties:
+            enabled:
+                description: "Enable liveness probe"
+                type: boolean
+                default: true
+            initialDelaySeconds:
+                description: "Number of seconds after the container has started before liveness probes are initiated."
+                type: integer
+                default: 60
+            periodSeconds:
+                description: "How often (in seconds) to perform the probe."
+                type: integer
+                default: 30
+            failureThreshold:
+                description: "When a Pod starts and the probe fails, Kubernetes will try failureThreshold times before recreate the pod."
+                type: integer
+                default: 3
+            standbyok:
+                description: "Specifies if nodes in standby mode are available"
+                type: boolean
+                default: true
+            uninitok:
+                description: "Specifies if uninitialized vault is available"
+                type: boolean
+                default: false
+            sealedok:
+                description: "Specifies if sealed nodes are available"
+                type: boolean
+                default: false
+
+    readinessProbe:
+        description: "Pod ReadinessProbe parameters"
+        type: object
+        properties:
+            enabled:
+                description: "Enable readiness probe"
+                type: boolean
+                default: true
+            initialDelaySeconds:
+                description: "Number of seconds after the container has started before readiness probes are initiated."
+                type: integer
+                default: 60
+            periodSeconds:
+                description: "How often (in seconds) to perform the probe."
+                type: integer
+                default: 15
+            failureThreshold:
+                description: "When a Pod starts and the probe fails, Kubernetes will try failureThreshold times before mark the container unreadable."
+                type: integer
+                default: 3
+            standbyok:
+                description: "Specifies if nodes in standby mode are available"
+                type: boolean
+                default: true
+            uninitok:
+                description: "Specifies if uninitialized vault is available"
+                type: boolean
+                default: false
+            sealedok:
+                description: "Specifies if sealed nodes are available"
+                type: boolean
+                default: false
+

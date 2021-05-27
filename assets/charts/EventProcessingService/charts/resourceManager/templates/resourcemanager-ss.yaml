@@ -1,0 +1,339 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: resourcemanager
+  labels:
+    app: resourcemanager-internal-zts1
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"                                     # will be filled by chart name-chartversion from chart.yaml eg: exampleservice.0.1.0
+    release: "{{ .Release.Name }}"                                                      # Will get filled by kubernetes
+    heritage: "{{ .Release.Service }}"
+spec:
+  replicas: {{default 1 .Values.Replicas}}                                              # number of replicated pods to be created 
+  updateStrategy:
+     type: RollingUpdate
+  serviceName: "resourcemanager"
+  selector:
+     matchLabels:
+       app: resourcemanager-internal-zts1
+       release: {{.Release.Name}}
+{{- if .Values.global.persistentVolume.enabled }}
+  volumeClaimTemplates:
+   - metadata:
+      name: poddata
+     spec:
+       accessModes: ["ReadWriteOnce"]
+       storageClassName: glusterfs-storageclass
+       resources:
+        requests:
+         storage: {{ .Values.pvcStorage.resourcemanagerpvc }}
+{{- end }}
+  template:
+    metadata:
+      annotations:
+        chart: {{ .Chart.Version }}
+      labels:
+        app: resourcemanager-internal-zts1
+        release: {{.Release.Name}}
+        vnfType: {{ .Values.global.vnftype }}
+        vnfcType: {{ .Values.global.vnfctype }}
+        vnfName: {{ .Values.global.vnfname }}
+        serviceType: RESOURCEMANAGERSERVICE
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+    spec:
+      containers:
+        - name: resourcemanager
+          image: "{{ .Values.global.imageRegistry }}/resourcemanager:{{ .Values.image.resourcemanagerimage.dockerTag }}"
+          imagePullPolicy: "{{ .Values.image.resourcemanagerimage.PullPolicy }}"
+          resources:
+            requests:
+              memory: {{ .Values.resourcemanager.resources.requests.memory | quote }}
+              cpu: {{ .Values.resourcemanager.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resourcemanager.resources.limits.memory | quote }}
+              cpu: {{ .Values.resourcemanager.resources.limits.cpu | quote }}
+          env:
+          - name: "CONFIG_IP"
+            value: "127.0.0.1"
+          - name: "CONFIG_PORT"
+            value: "8888"
+          - name: "WRITE_INTERVAL"
+            value: "1"
+          - name: "RETRYCOUNT"
+            value: "10"
+          - name: "DATACENTER"
+            value: "{{.Values.global.datacenter }}"
+          - name: "RELEASENAME"
+            value: "{{.Release.Name}}"
+          - name: "logRetention"
+            value: "2"
+          - name: "logPath"
+            value: "/opt/log"
+          - name: "SourceType"
+            value: "vnf1"        #sourcetype
+          - name: "Version"
+            value: "major:19.0|minor:0.5"
+          - name: "EPS_ADDR"
+            value: "localhost"
+          - name: "EPS_PORT"
+            value: "6061"
+          - name: "DATACENTER"
+            value: "{{ .Values.global.datacenter }}"
+          - name: "CLUSTERNAME"
+            value: "{{ .Values.global.clustername }}"
+          - name: "METADATA_MAX_RELEASE"
+            value: "{{ .Values.global.metadata_max_release }}"
+          - name: "METADATA_MIN_RELEASE"
+            value: "{{ .Values.global.metadata_min_release }}"
+          - name: "VNFTYPE"
+            value: "{{ .Values.global.vnftype }}"
+          - name: "VNFNAME"
+            value: "{{ .Values.global.vnfname }}"
+          - name: "VNFCTYPE"
+            value: "{{ .Values.global.vnfctype }}"
+          - name: "CHANNEL_BUFFER_SIZE"
+            value: "{{ .Values.countersenv.channelbuffsize }}"
+          - name: PODNAME
+            valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+          volumeMounts:
+          - mountPath: "/persistant/storage/"
+            name: poddata
+          - name: shared-data
+            mountPath: /opt/log
+                  
+        # fluent-bit-container
+        - name: fluent-bit
+          {{- include "logsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.fluentbit.PullPolicy }}
+          securityContext:
+            runAsUser: 2006
+          resources:
+            requests:
+              memory: {{ .Values.fluentbit.resources.requests.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.fluentbit.resources.limits.memory | quote }}
+              cpu: {{ .Values.fluentbit.resources.limits.cpu | quote }}
+          volumeMounts:
+            - name: shared-data
+              mountPath: /var/log
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+            - name: config-volume
+              mountPath: /fluent-bit/etc
+          env:
+            - name: FLUENTBIT_ARGS
+              value: "-c /fluent-bit/etc/fluent-bit.conf"
+            - name: TARGET_IP
+              value: "127.0.0.1"
+            - name: TARGET_PORT
+              value: "8888"
+            - name: "traceLevel"
+              value: "error"
+            - name: "logRetention"
+              value: "2"
+            - name: "logPath"
+              value: "/opt/log"
+            - name: VNFNAME
+              value: "{{ .Values.global.vnfname }}"
+            - name: VNFCTYPE
+              value: "{{ .Values.global.vnfctype }}"
+            - name: VNFTYPE
+              value: "ZTS"
+            - name: "VNFCNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+        - name: "registrationcontainer"
+          {{- include "consulregistrationsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{.Values.image.consulregistration.PullPolicy}}
+          securityContext:
+            runAsUser: 11
+          resources:
+            requests:
+              memory: {{ .Values.registration.resources.requests.memory | quote }}
+              cpu: {{ .Values.registration.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.registration.resources.limits.memory | quote }}
+              cpu: {{ .Values.registration.resources.limits.cpu | quote }}
+          env:
+            - name: "SERVICENAME"
+              value: "{{ .Values.consulenv.ztslenvoylbregid }}"
+            - name: "SDSFQDN"
+              value: "127.0.0.1"
+            - name: "ZTSNAME"
+              value: "{{ .Values.global.clustername }}"
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          command: ["sh","consulreg.sh"]
+
+        - name: envoy-sidecar
+          {{- include "envoysidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.envoyimage.pullPolicy }} 
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.envoysidecar.resources.requests.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.envoysidecar.resources.limits.memory | quote }}
+              cpu: {{ .Values.envoysidecar.resources.limits.cpu | quote }}
+          command: ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/envoy
+            - name: certs
+              mountPath: /certs
+            - name: shared-data-envoy
+              mountPath: /var/DebugTrace/EnvoySideCar
+          env:
+           - name: secretuserzts
+             valueFrom:
+              secretKeyRef:
+               name: {{ .Values.global.casecret }}
+               key: username
+           - name: secretpasswordzts
+             valueFrom:
+              secretKeyRef:
+                name: {{ .Values.global.casecret }}
+                key: password
+           - name: CNNAME
+             value: "{{ .Values.consulenv.ztslenvoylbregid }}-{{ .Values.global.clustername }}.service.{{ .Values.global.datacenter }}.{{.Release.Namespace}}.svc.cluster.local"
+           - name: CASERVICEFQDN
+             value: "caserverservice.{{.Release.Namespace}}.svc.cluster.local"
+           - name: "EPS_ADDR"
+             value: "localhost"
+           - name: "EPS_PORT"
+             value: "6061"
+           - name: "DATACENTER"
+             value: "{{ .Values.global.datacenter }}"
+           - name: "CLUSTERNAME"
+             value: "{{ .Values.global.clustername }}"
+           - name: "METADATA_MAX_RELEASE"
+             value: "{{ .Values.global.metadata_max_release }}"
+           - name: "METADATA_MIN_RELEASE"
+             value: "{{ .Values.global.metadata_min_release }}"
+           - name: "VNFTYPE"
+             value: "{{ .Values.global.vnftype }}"
+           - name: "VNFNAME"
+             value: "{{ .Values.global.vnfname }}"
+           - name: "VNFCTYPE"
+             value: "{{ .Values.global.vnfctype }}"
+           - name: "traceLevel"
+             value: "{{ .Values.global.counteralarmtracelevel }}"
+           - name: "CHANNEL_BUFFER_SIZE"
+             value: "{{ .Values.countersenv.channelbuffsize }}"
+           - name: "NAMESPACE"
+             valueFrom:
+              fieldRef:
+               fieldPath: metadata.namespace
+
+        - name: {{ .Values.containers.consulagentName }}
+          {{- include "consulagentsidecar.image" . | indent 10 }}
+          imagePullPolicy: {{ .Values.image.consul.pullPolicy }}
+          securityContext:
+            runAsUser: 70
+          resources:
+            requests:
+              memory: {{ .Values.consulagent.resources.requests.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.consulagent.resources.limits.memory | quote }}
+              cpu: {{ .Values.consulagent.resources.limits.cpu | quote }}
+          command:
+          - "/bin/consul"
+          env:
+           - name: MY_POD_IP
+             valueFrom:
+               fieldRef:
+                 fieldPath: status.podIP
+           - name: PODNAME
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.name
+           - name: NAMESPACE
+             valueFrom:
+               fieldRef:
+                 fieldPath: metadata.namespace
+           - name: NODE_NAME
+             value: {{ .Values.consulmetadata.name }}
+           - name: NODE_SERVICE_NAME
+             value: {{ .Values.consulserver.servicename }}
+           - name: SERVICE_DOMAIN_NAME
+             value: {{ .Values.consulagentenv.servicedomainName }}
+           - name: DOMAIN_NAME
+             value: {{ .Values.consulagentenv.domainName }}
+           - name: DATACENTER_VALUE
+             value: {{ .Values.global.datacenter }}
+           - name: CLIENT_BIND_IP
+             value: {{ .Values.consulagentenv.agentbindip }}
+          args:
+           - agent
+           - -retry-join=$(NODE_SERVICE_NAME).$(NAMESPACE).$(SERVICE_DOMAIN_NAME)
+           - -retry-join=$(NODE_SERVICE_NAME).$(NAMESPACE).$(SERVICE_DOMAIN_NAME)
+           - -retry-join=$(NODE_SERVICE_NAME).$(NAMESPACE).$(SERVICE_DOMAIN_NAME)
+           - -client=$(CLIENT_BIND_IP)
+           - -data-dir=/tmp/consul
+           - -bind=$(MY_POD_IP)
+           - -enable-script-checks=true
+           - -datacenter=$(DATACENTER_VALUE)
+           - -domain=$(DOMAIN_NAME)
+           - -node=$(PODNAME)
+          volumeMounts:
+               - name: data
+                 mountPath: /tmp/consul
+          ports:
+            - containerPort: 8500
+              name: ui-port
+            - containerPort: 8400
+              name: alt-port
+            - containerPort: 53
+              name: udp-port
+            - containerPort: 8600
+              name: udp-port-dns
+            - containerPort: 8443
+              name: https-port
+            - containerPort: 8080
+              name: http-port
+            - containerPort: 8301
+              name: serflan
+            - containerPort: 8302
+              name: serfwan
+            - containerPort: 8600
+              name: consuldns
+            - containerPort: 8300
+              name: agent
+
+      volumes:
+          - name: config
+            configMap:
+              name: configmapenvoyresourcemanager
+          - name: certs
+            emptyDir: {}
+          - name: data
+            emptyDir: {}
+{{- if not .Values.global.persistentVolume.enabled }}
+          - name: poddata
+            emptyDir : {}
+{{- end }}
+          - name: config-volume
+            configMap:
+              name: fluent-bit-config-resourcemanager
+          - name: shared-data 
+            emptyDir: {}
+          - name: shared-data-envoy 
+            emptyDir: {}
+      

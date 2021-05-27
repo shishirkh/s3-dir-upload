@@ -1,0 +1,286 @@
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-server
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  serviceName: {{ template "cm-crdb-redisio.fullname" . }}-server-nodes
+  podManagementPolicy: "Parallel"
+  replicas: {{ .Values.server.count }}
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "cm-crdb-redisio.common_labels" . | indent 6 }}
+      type: server
+  template:
+    metadata:
+      labels:
+        {{- include "cm-crdb-redisio.common_labels" . | indent 8 }}
+        type: server
+        release: {{ .Release.Name }}
+        vnfType  : {{ .Values.global.vnftype }}
+        vnfName :  {{ .Values.global.vnfname }}
+        vnfcType : {{ .Values.global.vnfctype }}
+        serviceType: CM
+        vnfMajorRelease: "{{ .Values.global.metadata_max_release }}"
+        vnfMinorRelease: "{{ .Values.global.metadata_min_release }}"
+
+      annotations:
+        config/checksum: {{ .Values.server.confInclude | sha256sum }}
+    spec:
+      securityContext:
+        runAsUser: 6379
+        runAsGroup: 6379
+        fsGroup: 6379
+      {{- if .Values.rbacEnabled }}
+      serviceAccountName: {{ template "cm-crdb-redisio.fullname" . }}
+      {{- end }}
+      initContainers:
+      # Main init config container
+      - name: config
+        {{- include "cm-crdb-redisio.server.image" . | indent 8 }}
+        securityContext:
+          runAsUser: 6379
+        command: [ "/usr/bin/harmonize_log", "--service=redisio-init", "/docker-entrypoint.sh"  ]
+        args: [ "init", "server" ]
+        env:
+        - name: DEBUG
+          value: {{ quote (.Values.server.debug | default "") }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cm-crdb-redisio.fullname" . }}-redis-secrets
+              key: redis-password
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /cluster
+        - name: import-cm
+          mountPath: /import
+          readOnly: true
+        - name: datadir
+          mountPath: /redisdb
+        resources:
+          limits:
+            cpu: {{ .Values.initcontainer.resources.limits.cpu | default "1000m" | quote }}
+            memory: {{ .Values.initcontainer.resources.limits.memory | default "1024Mi" | quote }}
+          requests:
+            cpu: {{ .Values.initcontainer.resources.requests.cpu | default "100m" | quote }}
+            memory: {{ .Values.initcontainer.resources.requests.memory | default "256Mi" | quote }}
+      containers:
+      # Primary Redis server container
+      - name: server
+        {{- include "cm-crdb-redisio.server.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.server.resources | indent 10 }}
+        securityContext:
+          runAsUser: 6379
+        ports:
+        - containerPort: 6379
+          name: redis
+        args: [ "server" ]
+        env:
+        - name: DEBUG
+          value: {{ quote (.Values.server.debug | default "") }}
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: GROUP_NAME
+          value: cmmaster
+        - name: _CRDB_REDISIO_SERVER_BIND
+          value: "$(POD_IP) 127.0.0.1"
+        - name: _CRDB_REDISIO_SERVER_SLAVE_ANNOUNCE_IP
+          value: "$(POD_NAME).$(MY_POD_NAMESPACE)"
+        - name: _CRDB_REDISIO_SERVER_SLAVE_ANNOUNCE_PORT
+          value: "6379"
+        volumeMounts:
+        - name: cluster-cm
+          mountPath: /cluster
+        - name: datadir
+          mountPath: /redisdb
+      {{- if .Values.server.tmpfsWorkingDir }}
+        - name: memorydir
+          mountPath: /redisdb-tmpfs
+      {{- end }}
+#        livenessProbe:
+#          exec:
+#            command:
+#            - bash
+#            - "-c"
+#            - |
+#              ( /usr/bin/redis-cli -h ${POD_IP} ping && /usr/bin/redis-cli ping ) || [[ -f /redisdb/conf/.restore ]]
+#          initialDelaySeconds: 180
+#          periodSeconds: 10
+#          timeoutSeconds: 5
+#          failureThreshold: 6
+#        readinessProbe:
+#          exec:
+#            command:
+#            - bash
+#            - "-c"
+#            - |
+#              ( /usr/bin/redis-cli -h ${POD_IP} ping && /usr/bin/redis-cli ping ) || [[ -f /redisdb/conf/.restore ]]
+#              #( /usr/bin/redisio-manage --verify-access && /usr/bin/redisio-manage --verify-replication ) || [[ -f /redisdb/conf/.restore ]]
+#          initialDelaySeconds: 10
+#          periodSeconds: 15
+#          timeoutSeconds: 1
+#          failureThreshold: 3
+#
+     # Redis server role-monitor container
+      - name: rolemon
+        {{- include "cm-crdb-redisio.rolemon.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.rolemon.resources | indent 10 }}
+        securityContext:
+          runAsUser: 6379
+        env:
+        - name: DEBUG
+          value: {{ quote (.Values.rolemon.debug | default "") }}
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cm-crdb-redisio.fullname" . }}-redis-secrets
+              key: redis-password
+
+      # Redis metrics exporter container
+      {{- if and (.Values.server.metrics) .Values.server.metrics.enabled }}
+      - name: metrics
+        {{- include "cm-crdb-redisio.server.metrics.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.server.metrics.resources | indent 10 }}
+        securityContext:
+          runAsUser: 6379
+        env:
+        - name: REDIS_ADDR
+          value: redis://127.0.0.1:6379
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cm-crdb-redisio.fullname" . }}-redis-secrets
+              key: redis-password
+        - name: REDIS_EXPORTER_REDIS_ONLY_METRICS
+          value: "true"
+        - name: REDIS_EXPORTER_DEBUG
+          value: {{ quote (.Values.server.metrics.debug | default "") }}
+        ports:
+        - name: metrics
+          containerPort: 9121
+      {{- end }}
+
+      # CBUR backup agent container
+      {{- if and (.Values.cbur) .Values.cbur.enabled }}
+      - name: cbura-sidecar
+        {{- include "cm-crdb-redisio.cbur.image" . | indent 8 }}
+        resources:
+{{ toYaml .Values.cbur.resources | indent 10 }}
+        securityContext:
+          runAsUser: {{ .Values.cbur.securityContext.runAsUser | default 6379 }}
+        volumeMounts:
+        - name: datadir
+          mountPath: /datadir
+      {{- end }}
+
+      volumes:
+{{- if not .Values.global.persistentVolume.enabled }}
+      - name: datadir
+        emptyDir: {}
+{{- end }}
+      - name: import-cm
+        configMap:
+          name: {{ template "cm-crdb-redisio.fullname" . }}-server-config
+      - name: cluster-cm
+        configMap:
+          name: {{ template "cm-crdb-redisio.fullname" . }}-cluster-config
+      {{- if .Values.server.tmpfsWorkingDir }}
+      - name: memorydir
+        emptyDir:
+          medium: "Memory"
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+        {{- if eq (default "hard" .Values.nodeAntiAffinity) "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - {{ template "cm-crdb-redisio.fullname" . }}
+              - key: type
+                operator: In
+                values:
+                - server
+            topologyKey: "kubernetes.io/hostname"
+          preferredDuringSchedulingIgnoredDuringExecution:
+        {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ template "cm-crdb-redisio.fullname" . }}
+                - key: type
+                  operator: In
+                  values:
+                  - server
+              topologyKey: "kubernetes.io/hostname"
+        {{- end }}
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ template "cm-crdb-redisio.fullname" . }}
+                - key: type
+                  operator: In
+                  values:
+                  - server
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+{{- if .Values.global.persistentVolume.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      annotations:
+        "helm.sh/resource-policy": {{ default "delete" .Values.global.persistentVolume.resourcePolicy }}
+      name: datadir
+      labels:
+        {{- include "cm-crdb-redisio.common_labels" . | indent 8 }}
+    spec:
+      accessModes:
+      - {{ .Values.global.persistentVolume.accessMode | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.global.persistentVolume.size | quote }}
+  {{- if .Values.global.persistentVolume.storageClass }}
+      storageClassName: "{{ .Values.global.persistentVolume.storageClass }}"
+  {{- else if (.Values.compaas) and .Values.compaas.storageClass }}
+      storageClassName: "{{ .Values.compaas.storageClass }}"
+  {{- end }}
+{{- end }}

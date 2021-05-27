@@ -1,0 +1,30 @@
+{{- if (and .Values.cbur .Values.cbur.enabled) }}
+apiVersion: "cbur.bcmt.local/v1"
+kind: BrPolicy
+metadata:
+  name: {{ template "cm-crdb-redisio.fullname" . }}-server
+  labels:
+    {{- include "cm-crdb-redisio.common_labels" . | indent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ template "cm-crdb-redisio.fullname" . }}
+      csf-subcomponent: redisio
+      type: server
+  volumes:
+  - datadir
+  backend:
+    mode: {{ .Values.cbur.backend.mode | quote }}
+  cronSpec: "0 0 * * *"
+  k8sType: statefulset
+  brOption: 1
+  maxiCopy: 5
+  hooks:
+  - name: server
+    commands:
+      preBackupCmd: ["sh", "-c", "redisio-manage --pre-backup"]
+      postBackupCmd: ["sh", "-c", "redisio-manage --post-backup"]
+      # Moved to an admin-based hook job
+      #preRestoreCmd: ["sh", "-c", "redisio-manage --pre-restore"]
+      #postRestoreCmd: ["sh", "-c", "redisio-manage --post-restore"]
+{{- end }}
